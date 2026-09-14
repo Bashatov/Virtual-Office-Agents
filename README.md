@@ -72,6 +72,18 @@ istalgan vaqt o'zgartirish mumkin.
   guruhiga yozadi — xuddi videodagidek.
 - Har bir agent bilan alohida (shaxsiy) suhbat ham qilishingiz mumkin —
   ular bir-biridan mustaqil ishlaydi.
+- **Guruhda tartib**: xodimlar o'zaro yozishganda botlar aralashmaydi.
+  Botni chaqirish uchun: `@BotUsername` yozing, botning oldingi
+  xabariga "Reply" qiling, yoki xabarni bot nomi bilan boshlang
+  (masalan "Marketolog, Instagram uchun post yoz").
+- **Fayllar**: botlarga `.txt`, `.docx`, `.pdf` fayl yuborsangiz, ular
+  fayl ichidagi matnni o'qib, shunga qarab javob beradi.
+- **Ovozli xabarlar**: botlarga ovozli xabar yuborsangiz, ular uni
+  avtomatik matnga o'girib (Whisper orqali), tushunib, matn holida
+  javob qaytaradi.
+- **Haqiqiy xodimga xabar**: Direktorga "operatorga ayt..." desangiz,
+  u ro'yxatdagi xodimga to'g'ridan-to'g'ri Telegram xabar yuboradi va
+  javobini kutib, kelgach sizga darhol yetkazadi.
 
 ## Keyingi kuchaytirishlar (ixtiyoriy)
 

@@ -1,15 +1,19 @@
 # -*- coding: utf-8 -*-
 """
 Bitta agent uchun to'liq ishchi mantiq:
-  1. Foydalanuvchidan/guruhdan xabar keladi
-     -> Agar bu xabar biror xodimdan kutilayotgan javob bo'lsa,
-        to'g'ridan-to'g'ri asl so'rovchiga forward qilinadi (LLM ishlamaydi)
-     -> Aks holda LLM javob beradi
-  2. Agar javobda [DELEGATE:agent_key] bo'lsa -> AI bo'limga vazifa yaratiladi
-  3. Agar javobda [MESSAGE_HUMAN:employee_key] bo'lsa -> xodimga to'g'ridan-
-     to'g'ri Telegram xabar yuboriladi va javobi kutiladi
-  4. Fon rejimda: shu agentga tegishli 'pending' AI-vazifalarni tekshirib,
-     bajarib, guruhga natijani yozib turadi
+
+  - Shaxsiy chatda: har doim javob beradi.
+  - Guruh chatida: FAQAT quyidagi hollarda javob beradi (bekorga
+    aralashib, xodimlarning o'zaro suhbatiga xalaqit bermaslik uchun):
+      1) @botusername orqali chaqirilsa
+      2) shu botning oldingi xabariga "reply" qilingan bo'lsa
+      3) xabar bot nomi bilan boshlansa (masalan "Marketolog, ...")
+
+  - Matn, fayl (.txt/.docx/.pdf) va ovozli xabarlarni qabul qiladi.
+  - Javobda [DELEGATE:agent_key] bo'lsa -> AI bo'limga vazifa yaratiladi.
+  - Javobda [MESSAGE_HUMAN:employee_key] bo'lsa -> xodimga to'g'ridan-
+    to'g'ri Telegram xabar yuboriladi va javobi kutiladi.
+  - Fon rejimda: shu agentga tegishli 'pending' AI-vazifalarni bajaradi.
 """
 
 import re
@@ -21,13 +25,16 @@ from telegram.ext import Application, MessageHandler, ContextTypes, filters
 
 from agents_config import AGENTS, GROUP_CHAT_ID
 from employees_config import EMPLOYEES
-from llm_client import generate_reply
+from llm_client import generate_reply, transcribe_voice
+import file_utils
 import db
 
 logger = logging.getLogger(__name__)
 
 DELEGATE_RE = re.compile(r"\[DELEGATE:(\w+)\]\s*(.+)", re.DOTALL)
 MESSAGE_HUMAN_RE = re.compile(r"\[MESSAGE_HUMAN:(\w+)\]\s*(.+)", re.DOTALL)
+
+GROUP_TYPES = ("group", "supergroup")
 
 
 def build_worker(agent_key: str) -> Application:
@@ -38,12 +45,40 @@ def build_worker(agent_key: str) -> Application:
 
     app = Application.builder().token(token).build()
 
-    async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        chat_id = update.effective_chat.id
-        user_text = update.message.text
-        if not user_text:
-            return
+    # ---------- Guruhda "chaqirilganmi" tekshiruvi ----------
 
+    async def is_addressed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        chat = update.effective_chat
+        if chat.type not in GROUP_TYPES:
+            return True  # shaxsiy chatda har doim javob beramiz
+
+        msg = update.message
+        text = (msg.text or msg.caption or "").strip()
+
+        # 1) shu botning oldingi xabariga reply qilinganmi
+        if (
+            msg.reply_to_message
+            and msg.reply_to_message.from_user
+            and msg.reply_to_message.from_user.id == context.bot.id
+        ):
+            return True
+
+        # 2) @username orqali chaqirilganmi
+        bot_username = (context.bot.username or "").lower()
+        if bot_username and f"@{bot_username}" in text.lower():
+            return True
+
+        # 3) bot nomi bilan boshlanganmi (masalan "Marketolog, ...")
+        display = cfg["display_name"].lower()
+        if text.lower().startswith(display):
+            return True
+
+        return False
+
+    # ---------- Asosiy mantiq (matn, fayl, ovoz - hammasi shu yerga keladi) ----------
+
+    async def process_user_text(chat_id: int, user_text: str, update: Update,
+                                 context: ContextTypes.DEFAULT_TYPE):
         # 1) Bu xabar - biror xodimdan kutilayotgan javobmi?
         pending_human_task = db.get_waiting_human_task(chat_id)
         if pending_human_task:
@@ -52,13 +87,10 @@ def build_worker(agent_key: str) -> Application:
                 pending_human_task["employee_key"], {}
             ).get("display_name", pending_human_task["employee_key"])
 
-            reply_text = (
-                f"📩 {employee_name} javob berdi:\n\n{user_text}"
-            )
+            reply_text = f"📩 {employee_name} javob berdi:\n\n{user_text}"
             await context.bot.send_message(
                 chat_id=pending_human_task["origin_chat_id"], text=reply_text
             )
-            # Xodimning o'ziga ham tasdiq beramiz
             await update.message.reply_text("✅ Javobingiz uzatildi, rahmat!")
             return
 
@@ -114,7 +146,63 @@ def build_worker(agent_key: str) -> Application:
         db.save_message(agent_key, chat_id, "assistant", visible_reply)
         await update.message.reply_text(visible_reply)
 
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    # ---------- Matn xabarlari ----------
+
+    async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message or not update.message.text:
+            return
+        if not await is_addressed(update, context):
+            return
+        await process_user_text(update.effective_chat.id, update.message.text,
+                                 update, context)
+
+    # ---------- Fayllar (.txt, .docx, .pdf) ----------
+
+    async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message or not update.message.document:
+            return
+        if not await is_addressed(update, context):
+            return
+
+        doc = update.message.document
+        await update.message.reply_text(f"📄 {doc.file_name} qabul qilindi, o'qiyapman...")
+
+        tg_file = await doc.get_file()
+        file_bytes = bytes(await tg_file.download_as_bytearray())
+        extracted = file_utils.extract_text(file_bytes, doc.file_name)
+
+        caption = update.message.caption or "(izoh yozilmagan)"
+        user_text = (
+            f"[Foydalanuvchi fayl yubordi: {doc.file_name}]\n\n"
+            f"Fayl matni:\n{extracted}\n\n"
+            f"Foydalanuvchi izohi: {caption}"
+        )
+        await process_user_text(update.effective_chat.id, user_text, update, context)
+
+    # ---------- Ovozli xabarlar ----------
+
+    async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message or not update.message.voice:
+            return
+        if not await is_addressed(update, context):
+            return
+
+        tg_file = await update.message.voice.get_file()
+        file_bytes = bytes(await tg_file.download_as_bytearray())
+        transcribed = transcribe_voice(file_bytes)
+
+        if not transcribed:
+            await update.message.reply_text(
+                "⚠️ Ovozli xabarni tushunolmadim, matn bilan yozib ko'ring."
+            )
+            return
+
+        await update.message.reply_text(f"🎙 Eshitdim: \u201c{transcribed}\u201d")
+        await process_user_text(update.effective_chat.id, transcribed, update, context)
+
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     return app
 
 

@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-Claude va GPT-4o uchun yagona chaqiruv interfeysi.
-Agent qaysi 'provider' ga ega bo'lsa, shu orqali javob generatsiya qilinadi.
+Claude va GPT-4o uchun yagona chaqiruv interfeysi + ovozli xabarni
+matnga o'girish (OpenAI Whisper).
 """
 
 import os
+import io
 import logging
 from anthropic import Anthropic
 from openai import OpenAI
@@ -61,8 +62,25 @@ def generate_reply(provider: str, model: str, system_prompt: str, history: list[
             raise ValueError(f"Noma'lum provider: {provider}")
 
     except Exception as e:
-        logger.exception("LLM chaqiruvida xatolik: %s", e)
+        logger.exception("LLM chaqiruvida xatolik (provider=%s, model=%s): %s",
+                          provider, model, e)
         return (
             "⚠️ Javob generatsiya qilishda xatolik yuz berdi. "
             "API kalitni yoki limitni tekshiring."
         )
+
+
+def transcribe_voice(file_bytes: bytes) -> str:
+    """Ovozli xabar baytlarini (.ogg) matnga o'giradi. Xato bo'lsa bo'sh qaytaradi."""
+    try:
+        client = _get_openai()
+        audio_file = io.BytesIO(file_bytes)
+        audio_file.name = "voice.ogg"  # OpenAI SDK format aniqlash uchun nomga muhtoj
+        resp = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+        )
+        return (resp.text or "").strip()
+    except Exception as e:
+        logger.exception("Ovozni matnga o'girishda xatolik: %s", e)
+        return ""
