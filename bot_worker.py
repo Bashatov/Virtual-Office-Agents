@@ -385,6 +385,8 @@ def build_worker(agent_key: str, bots: dict) -> Application:
     async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message or not update.message.text:
             return
+        if not db.claim_update(agent_key, update.update_id):
+            return  # bu xabar allaqachon qayta ishlangan (takror)
         if await try_handle_employee_reply(update):
             return
         if not await is_addressed(update, context):
@@ -396,6 +398,8 @@ def build_worker(agent_key: str, bots: dict) -> Application:
 
     async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message or not update.message.document:
+            return
+        if not db.claim_update(agent_key, update.update_id):
             return
         if not await is_addressed(update, context):
             return
@@ -420,6 +424,8 @@ def build_worker(agent_key: str, bots: dict) -> Application:
     async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message or not update.message.voice:
             return
+        if not db.claim_update(agent_key, update.update_id):
+            return
         if not await is_addressed(update, context):
             return
 
@@ -440,6 +446,8 @@ def build_worker(agent_key: str, bots: dict) -> Application:
 
     async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message or not update.message.photo:
+            return
+        if not db.claim_update(agent_key, update.update_id):
             return
         if not await is_addressed(update, context):
             return
@@ -471,6 +479,8 @@ def build_worker(agent_key: str, bots: dict) -> Application:
 
     async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message or not update.message.video:
+            return
+        if not db.claim_update(agent_key, update.update_id):
             return
         if not await is_addressed(update, context):
             return

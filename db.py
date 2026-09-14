@@ -12,6 +12,7 @@ MongoDB Atlas bilan ishlash. To'plamlar (collection):
 import os
 import datetime
 from pymongo import MongoClient, ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 _client = None
 _db = None
@@ -23,7 +24,34 @@ def get_db():
         uri = os.getenv("MONGODB_URI")
         _client = MongoClient(uri)
         _db = _client[os.getenv("MONGODB_DB_NAME", "ai_jamoa")]
+        # Takroriy Telegram update'larni aniqlash uchun unikal indeks
+        # (masalan server qayta ishga tushganda bitta xabar ikki marta
+        # qayta ishlanib ketmasligi uchun).
+        _db.processed_updates.create_index(
+            [("agent", 1), ("update_id", 1)], unique=True
+        )
     return _db
+
+
+# ---------- Takroriy xabarlarni aniqlash ----------
+
+def claim_update(agent_key: str, update_id: int) -> bool:
+    """
+    True qaytaradi - agar bu update shu agent uchun BIRINCHI marta
+    ko'rilayotgan bo'lsa (demak qayta ishlash mumkin).
+    False qaytaradi - agar bu update ALLAQACHON qayta ishlangan bo'lsa
+    (masalan server qayta ishga tushishi natijasida takrorlangan) -
+    bunda handler hech narsa qilmasdan chiqib ketishi kerak.
+    """
+    db = get_db()
+    try:
+        db.processed_updates.insert_one({
+            "agent": agent_key, "update_id": update_id,
+            "ts": datetime.datetime.utcnow(),
+        })
+        return True
+    except DuplicateKeyError:
+        return False
 
 
 # ---------- Suhbat xotirasi ----------
