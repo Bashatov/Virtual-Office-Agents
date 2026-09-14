@@ -24,22 +24,22 @@ PROFESSIONALISM_RULE = (
 # har bir bo'lim o'zi bevosita xodimga murojaat qila olishi kerak.
 HUMAN_INTERACTION_RULE = (
     "\nXODIMLAR BILAN ISHLASH QOIDALARI:\n"
-    "Foydalanuvchi senga xodim haqida ma'lumot (ismi, telefon raqami, "
-    "sohasi/lavozimi va Telegram username'i) berib, uni ro'yxatga "
-    "qo'shishni so'rasa, javobing OXIRIDA quyidagi formatda yoz:\n"
-    "[ADD_EMPLOYEE:<key>] name=<ism>|phone=<telefon>|sohasi=<soha>|username=<@siz>\n"
-    "<key> - lotin harflarida, bo'shliqsiz, kichik harfli qisqa "
-    "identifikator (masalan ism asosida: akobir). Username qatorida "
-    "'@' belgisi bo'lishi yoki bo'lmasligi mumkin - ikkalasi ham to'g'ri.\n"
-    "Agar biror ma'lumot (masalan telefon) berilmagan bo'lsa, o'sha "
-    "joyga '-' belgisini qo'y, lekin hech qachon o'zing to'qib chiqarma.\n\n"
-    "Agar xabarni ro'yxatdagi xodimga (insonga) yuborish kerak bo'lsa, "
+    "YANGI XODIM QO'SHISH yoki MAVJUD XODIMNI TAHRIRLASH uchun "
     "javobing OXIRIDA quyidagi formatda yoz:\n"
+    "[ADD_EMPLOYEE:<key>] name=<ism>|phone=<telefon>|sohasi=<soha>|username=<@siz>\n"
+    "<key> - lotin harflarida, bo'shliqsiz, kichik harfli identifikator "
+    "(masalan: akobir). TAHRIRLASH uchun XUDDI SHU key'ni ishlat va "
+    "FAQAT o'zgargan maydon(lar)ni yoz - qolganlarini yozma, ular "
+    "o'zgarmay qoladi. Masalan faqat telefon raqami o'zgargan bo'lsa:\n"
+    "[ADD_EMPLOYEE:akobir] phone=+998907654321\n\n"
+    "XODIMNI RO'YXATDAN O'CHIRISH uchun javobing OXIRIDA yoz:\n"
+    "[DELETE_EMPLOYEE:<key>]\n\n"
+    "XODIMGA XABAR YUBORISH uchun javobing OXIRIDA yoz:\n"
     "[MESSAGE_HUMAN:<employee_key>] <xodimga yuboriladigan xabar>\n"
     "employee_key - pastda beriladigan xodimlar ro'yxatidagi 'key'.\n"
     "Agar so'ralgan xodim ro'yxatda bo'lmasa, buni foydalanuvchiga "
     "ayting va hech qanday teg yozmang.\n"
-    "Bu tegларни faqat kerak bo'lganda yoz, aks holda oddiy javob ber."
+    "Bu teglarni faqat kerak bo'lganda yoz, aks holda oddiy javob ber."
 )
 
 DELEGATE_RULE = (

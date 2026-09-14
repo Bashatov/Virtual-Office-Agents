@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 DELEGATE_RE = re.compile(r"\[DELEGATE:(\w+)\]\s*(.+)", re.DOTALL)
 MESSAGE_HUMAN_RE = re.compile(r"\[MESSAGE_HUMAN:(\w+)\]\s*(.+)", re.DOTALL)
 ADD_EMPLOYEE_RE = re.compile(r"\[ADD_EMPLOYEE:(\w+)\]\s*(.+)", re.DOTALL)
+DELETE_EMPLOYEE_RE = re.compile(r"\[DELETE_EMPLOYEE:(\w+)\]")
 
 GROUP_TYPES = ("group", "supergroup")
 
@@ -122,23 +123,28 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     f"\n\n📋 Vazifa {AGENTS[to_agent]['display_name']}ga berildi."
                 )
 
-        # b) Yangi xodim qo'shish
+        # b) Yangi xodim qo'shish / tahrirlash
         add_emp_match = ADD_EMPLOYEE_RE.search(reply)
         if add_emp_match:
             emp_key = add_emp_match.group(1).strip().lower()
             fields = _parse_fields(add_emp_match.group(2))
             visible_reply = reply[: add_emp_match.start()].strip()
-            db.add_employee(
-                emp_key,
-                fields.get("name", "-"),
-                fields.get("phone", "-"),
-                fields.get("sohasi", "-"),
-                fields.get("username", "-"),
-            )
+            db.upsert_employee(emp_key, fields)
             visible_reply += (
-                f"\n\n✅ Xodim ro'yxatga qo'shildi: {fields.get('name', emp_key)} "
-                f"({emp_key})."
+                f"\n\n✅ Xodim ma'lumotlari saqlandi: "
+                f"{fields.get('name', emp_key)} ({emp_key})."
             )
+
+        # b2) Xodimni o'chirish
+        delete_emp_match = DELETE_EMPLOYEE_RE.search(reply)
+        if delete_emp_match:
+            emp_key = delete_emp_match.group(1).strip().lower()
+            visible_reply = reply[: delete_emp_match.start()].strip()
+            removed = db.delete_employee(emp_key)
+            if removed:
+                visible_reply += f"\n\n🗑 Xodim ro'yxatdan o'chirildi: {emp_key}."
+            else:
+                visible_reply += f"\n\n⚠️ '{emp_key}' nomli xodim topilmadi."
 
         # c) Xodimga guruhda @mention orqali xabar yuborish
         human_match = MESSAGE_HUMAN_RE.search(reply)
@@ -195,9 +201,13 @@ def build_worker(agent_key: str, bots: dict) -> Application:
         if not claimed:
             return False
 
-        origin_bot = bots.get(claimed.get("origin_agent")) or bots.get(agent_key)
+        origin_agent_key = claimed.get("origin_agent", agent_key)
+        origin_bot = bots.get(origin_agent_key) or bots.get(agent_key)
         text = f"📩 @{username} javob berdi:\n\n{update.message.text}"
         await origin_bot.send_message(chat_id=claimed["origin_chat_id"], text=text)
+        # MUHIM: natijani origin_agent (masalan Direktor)ning o'z xotirasiga
+        # ham yozamiz - shunda keyinroq so'ralsa, agent buni "eslaydi".
+        db.save_message(origin_agent_key, claimed["origin_chat_id"], "assistant", text)
         await update.message.reply_text("✅ Javobingiz uzatildi, rahmat!")
         return True
 
@@ -283,6 +293,10 @@ async def task_checker_loop(agent_key: str, bots: dict, interval_sec: int = 20):
                 origin_bot = bots.get(origin_agent_key) or bots.get(agent_key)
                 text = f"✅ {cfg['display_name']} bajardi:\n\n{result}"
                 await origin_bot.send_message(chat_id=task["origin_chat_id"], text=text)
+                # MUHIM: natijani origin_agent (masalan Direktor)ning o'z
+                # xotirasiga ham yozamiz - shunda keyinroq "o'sha savollarni
+                # yubora olasanmi" deb so'ralsa, agent buni eslaydi.
+                db.save_message(origin_agent_key, task["origin_chat_id"], "assistant", text)
         except Exception:
             logger.exception("task_checker_loop xatolik (%s)", agent_key)
 

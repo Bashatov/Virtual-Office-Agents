@@ -82,22 +82,32 @@ def mark_task_done(task_id, result_text: str):
     )
 
 
-# ---------- Xodimlar (Direktorga yozib qo'shiladi, DB'da saqlanadi) ----------
+# ---------- Xodimlar (Direktorga yozib qo'shiladi/tahrirlanadi, DB'da saqlanadi) ----------
 
-def add_employee(key: str, name: str, phone: str, sohasi: str, username: str):
+def upsert_employee(key: str, fields: dict):
+    """
+    fields - faqat YANGILANISHI kerak bo'lgan maydonlar (name/phone/
+    sohasi/username). Berilmagan maydonlarga tegilmaydi - shu orqali
+    ham yangi xodim qo'shish, ham mavjudini QISMAN tahrirlash mumkin
+    (masalan faqat telefon raqamini yangilash).
+    """
     db = get_db()
-    db.employees.update_one(
-        {"key": key},
-        {"$set": {
-            "key": key,
-            "name": name,
-            "phone": phone,
-            "sohasi": sohasi,
-            "username": username.lstrip("@"),
-            "updated_at": datetime.datetime.utcnow(),
-        }},
-        upsert=True,
-    )
+    update = {}
+    for k, v in fields.items():
+        if not v or v == "-":
+            continue
+        if k == "username":
+            v = v.lstrip("@")
+        update[k] = v
+    update["key"] = key
+    update["updated_at"] = datetime.datetime.utcnow()
+    db.employees.update_one({"key": key}, {"$set": update}, upsert=True)
+
+
+def delete_employee(key: str) -> bool:
+    db = get_db()
+    result = db.employees.delete_one({"key": key})
+    return result.deleted_count > 0
 
 
 def get_employee(key: str):
