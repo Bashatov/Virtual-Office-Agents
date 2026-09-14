@@ -41,6 +41,7 @@ from agents_config import AGENTS, GROUP_CHAT_ID, build_system_prompt
 from topics_config import TOPIC_MAP
 from llm_client import generate_reply, transcribe_voice, analyze_image, generate_image
 import file_utils
+import web_utils
 import db
 
 logger = logging.getLogger(__name__)
@@ -391,8 +392,15 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             return
         if not await is_addressed(update, context):
             return
-        await process_user_text(update.effective_chat.id, update.message.text,
-                                 update, context)
+
+        user_text = update.message.text
+        urls = web_utils.find_urls(user_text)
+        if urls:
+            for url in urls[:2]:  # ko'pi bilan 2 ta havola
+                page_content = web_utils.fetch_url_text(url)
+                user_text += f"\n\n[Havola tarkibi - {url}]:\n{page_content}"
+
+        await process_user_text(update.effective_chat.id, user_text, update, context)
 
     # ---------- Fayllar (.txt, .docx, .pdf) ----------
 

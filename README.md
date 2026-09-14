@@ -88,9 +88,15 @@ istalgan vaqt o'zgartirish mumkin.
   Telegram orqali yuboradi. "Buni operatorga PDF qilib yubor"
   desangiz esa, fayl guruhda o'sha xodimga @mention qilib yuboriladi.
 - **Rasm yaratish**: Dizaynerga (yoki istalgan botga) "rasm chizib
-  ber", "banner tayyorla" desangiz, DALL-E 3 orqali haqiqiy rasm
-  generatsiya qilinib yuboriladi. Xodimga yuborish ham xuddi fayl
-  kabi ishlaydi ("bu rasmni operatorga yubor").
+  ber", "banner tayyorla" desangiz, AI orqali haqiqiy rasm generatsiya
+  qilinib yuboriladi. Xodimga yuborish ham xuddi fayl kabi ishlaydi
+  ("bu rasmni operatorga yubor").
+- **Havolalar (linklar)**: xabaringizda oddiy veb-sahifa havolasi
+  (blog, yangilik, kompaniya sayti va h.k.) bo'lsa, bot uni ochib,
+  sarlavha va matnini o'qib, shunga qarab javob beradi. Instagram,
+  Facebook, TikTok, YouTube, Twitter/X kabi saytlar bundan mustasno —
+  ular login/JavaScript talab qilgani uchun ochilmaydi; bunday
+  holatlarda faylni/rasmni/videoni to'g'ridan-to'g'ri yuklab yuboring.
 - **Ovozli xabarlar**: botlarga ovozli xabar yuborsangiz, ular uni
   avtomatik matnga o'girib (Whisper orqali), tushunib, matn holida
   javob qaytaradi.
