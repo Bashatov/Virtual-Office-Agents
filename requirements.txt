@@ -3,4 +3,3 @@ anthropic==0.34.2
 openai==1.43.0
 pymongo==4.8.0
 python-dotenv==1.0.1
-httpx==0.27.2
