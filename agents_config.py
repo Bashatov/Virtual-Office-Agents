@@ -9,6 +9,7 @@ Modelni o'zgartirish uchun shunchaki "provider" qiymatini
 """
 
 import os
+import datetime
 
 PROFESSIONALISM_RULE = (
     "Muloqot uslubing: professional, ishbilarmon, aniq va hurmatli. "
@@ -76,7 +77,7 @@ FILE_CREATION_RULE = (
 
 IMAGE_CREATION_RULE = (
     "\nRASM YARATISH QOIDASI:\n"
-    "Agar foydalanuvchi sendan haqiqiy rasm/banner/tasvir generatsiya "
+    "Agar foydalanuvchi sendan YANGI rasm/banner/tasvir generatsiya "
     "qilishni so'rasa (masalan 'rasm chizib ber', 'banner tayyorla', "
     "'post uchun surat yasa'), avval qisqa tayyorlik xabarini yoz, "
     "so'ng javobing OXIRIDA quyidagi formatda yoz:\n"
@@ -85,8 +86,39 @@ IMAGE_CREATION_RULE = (
     "Promptni har doim ingliz tilida yoz (rasm generatori shunday "
     "yaxshiroq ishlaydi), lekin foydalanuvchiga yozadigan oddiy "
     "javobing o'zbek tilida bo'lsin.\n\n"
+    "Agar foydalanuvchi AVVAL YUBORGAN (mavjud) rasmni o'zgartirishni "
+    "so'rasa (masalan 'shu rasmni boshqacha qilib ber', 'buni "
+    "tahrirla', 'shu rasmga X qo'shib ber' - ya'ni YANGI rasm emas, "
+    "MAVJUD rasmning o'zgartirilgan versiyasi kerak bo'lsa), "
+    "CREATE_IMAGE o'rniga quyidagi formatda yoz:\n"
+    "[EDIT_IMAGE] <nima o'zgartirish kerakligi, ingliz tilida batafsil>\n"
+    "(Tizim avtomatik ravishda foydalanuvchi oxirgi yuborgan rasmni "
+    "topib, shu tavsif asosida tahrirlaydi.)\n\n"
     "Agar rasm XODIMGA yuborilishi kerak bo'lsa, o'rniga yoz:\n"
     "[SEND_IMAGE_TO_HUMAN:<employee_key>] <ingliz tilidagi tasvir>\n"
+)
+
+
+SCHEDULE_REMINDER_RULE = (
+    "\nESLATMA REJALASHTIRISH QOIDASI:\n"
+    "Agar foydalanuvchi MA'LUM VAQTDA (masalan 'ertaga soat 10:00da', "
+    "'bugun kechqurun') biror xodimga eslatma/xabar yuborilishini "
+    "so'rasa - buni DARHOL emas, BELGILANGAN VAQTDA bajarish uchun "
+    "javobing OXIRIDA quyidagi formatda yoz:\n"
+    "[SCHEDULE_REMINDER:<agent_key>:<employee_key>:<YYYY-MM-DD HH:MM>] "
+    "<eslatma matni>\n"
+    "- agent_key - buni QAYSI BO'LIM bajarishi kerak. Faqat quyidagilardan "
+    "biri bo'lishi mumkin: direktor, marketolog, smm, dizayner, "
+    "mobilograf, moliya. Agar foydalanuvchi ro'yxatda yo'q bo'lim "
+    "nomini aytsa (masalan 'HR'), eng yaqin mos bo'limni tanla yoki "
+    "o'zing (direktor) bajar.\n"
+    "- employee_key - xodimlar ro'yxatidagi 'key'.\n"
+    "- sana/vaqtni albatta pastda berilgan 'HOZIRGI SANA VA VAQT' "
+    "asosida aniq hisoblab chiq (masalan 'ertaga' - bugungi sanadan "
+    "+1 kun), YYYY-MM-DD HH:MM formatida, Toshkent vaqti bo'yicha.\n"
+    "Belgilangan vaqt kelganda, tizim eslatmani avtomatik yuboradi va "
+    "natijasini senga, keyin esa foydalanuvchiga qaytaradi - buni "
+    "tasdiqlab qo'y."
 )
 
 
@@ -102,7 +134,7 @@ AGENTS = {
             "kerak bo'lsa mos bo'limga yoki xodimga topshiriq berish va "
             "umumiy strategiyani belgilash.\n\n"
             + PROFESSIONALISM_RULE + DELEGATE_RULE + HUMAN_INTERACTION_RULE
-            + FILE_CREATION_RULE + IMAGE_CREATION_RULE
+            + FILE_CREATION_RULE + IMAGE_CREATION_RULE + SCHEDULE_REMINDER_RULE
         ),
     },
     "marketolog": {
@@ -117,7 +149,7 @@ AGENTS = {
             "yozish. Har doim: 1) maqsadli auditoriya, 2) asosiy taklif "
             "(offer), 3) chaqiruv (CTA) borligiga ishonch hosil qil.\n\n"
             + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
-            + IMAGE_CREATION_RULE
+            + IMAGE_CREATION_RULE + SCHEDULE_REMINDER_RULE
         ),
     },
     "smm": {
@@ -130,7 +162,7 @@ AGENTS = {
             "Instagram/Telegram uchun kontent-reja tuzish, post matnlari "
             "yozish, hashtag va joylash vaqtini tavsiya qilish.\n\n"
             + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
-            + IMAGE_CREATION_RULE
+            + IMAGE_CREATION_RULE + SCHEDULE_REMINDER_RULE
         ),
     },
     "dizayner": {
@@ -146,7 +178,7 @@ AGENTS = {
             "foydalanib haqiqiy rasm yubor, faqat so'z bilan "
             "tasvirlab qo'ya qolma.\n\n"
             + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
-            + IMAGE_CREATION_RULE
+            + IMAGE_CREATION_RULE + SCHEDULE_REMINDER_RULE
         ),
     },
     "mobilograf": {
@@ -159,7 +191,7 @@ AGENTS = {
             "reklama/kontent videolar uchun ssenariy (sahna-sahna), syomka "
             "rejasi va davomiyligini yozib berish.\n\n"
             + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
-            + IMAGE_CREATION_RULE
+            + IMAGE_CREATION_RULE + SCHEDULE_REMINDER_RULE
         ),
     },
     "moliya": {
@@ -172,7 +204,7 @@ AGENTS = {
             "hisoblash, xarajatlarni kuzatish va oddiy tilda hisobot "
             "berish. Raqamlarni aniq ber, taxminiy bo'lsa 'taxminan' deb "
             "belgila.\n\n" + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
-            + IMAGE_CREATION_RULE
+            + IMAGE_CREATION_RULE + SCHEDULE_REMINDER_RULE
         ),
     },
 }
@@ -183,8 +215,10 @@ GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID")
 def build_system_prompt(agent_key: str) -> str:
     """
     Har bir so'rov oldidan chaqiriladi - hozirgi xodimlar ro'yxatini
-    (MongoDB'dan) system promptga jonli qo'shib beradi, shunda agent
-    doim ENG YANGI xodimlar ro'yxatini "biladi".
+    (MongoDB'dan) va hozirgi sana/vaqtni system promptga jonli qo'shib
+    beradi, shunda agent doim ENG YANGI ma'lumotni "biladi" va
+    "ertaga", "bugun kechqurun" kabi nisbiy vaqtlarni to'g'ri hisoblay
+    oladi.
     """
     import db  # aylanma import (circular import)ni oldini olish uchun shu yerda
     cfg = AGENTS[agent_key]
@@ -197,4 +231,19 @@ def build_system_prompt(agent_key: str) -> str:
         )
     else:
         emp_lines = "(hozircha xodim qo'shilmagan)"
-    return cfg["system_prompt"] + "\n\nHOZIRGI XODIMLAR RO'YXATI:\n" + emp_lines
+
+    now_tashkent = datetime.datetime.utcnow() + datetime.timedelta(hours=5)
+    weekday_names = [
+        "Dushanba", "Seshanba", "Chorshanba", "Payshanba",
+        "Juma", "Shanba", "Yakshanba",
+    ]
+    now_str = (
+        now_tashkent.strftime("%Y-%m-%d %H:%M")
+        + f" ({weekday_names[now_tashkent.weekday()]})"
+    )
+
+    return (
+        cfg["system_prompt"]
+        + "\n\nHOZIRGI SANA VA VAQT (Toshkent bo'yicha): " + now_str
+        + "\n\nHOZIRGI XODIMLAR RO'YXATI:\n" + emp_lines
+    )

@@ -7,6 +7,11 @@ MongoDB Atlas bilan ishlash. To'plamlar (collection):
     tahrirlash shart emas)
   - human_tasks: xodimga guruhda @mention orqali yuborilgan xabarlar va
     ularning javobi kutilayotgan holati
+  - scheduled_reminders: ma'lum vaqtda bajarilishi kerak bo'lgan
+    eslatmalar (masalan "ertaga soat 10:00da Jamshidga eslatma yubor")
+  - last_photos: har bir agent+chat uchun oxirgi yuborilgan rasmning
+    Telegram file_id'si (keyinchalik "shu rasmni tahrirla" desa
+    ishlatiladi)
 """
 
 import os
@@ -225,3 +230,55 @@ def claim_human_task_by_username(group_chat_id: int, username: str, reply_text: 
             {"_id": {"$in": other_ids}}, {"$set": {"status": "superseded"}}
         )
     return primary
+
+
+# ---------- Vaqt bilan rejalashtirilgan eslatmalar ----------
+
+def create_scheduled_reminder(to_agent: str, employee_key: str, run_at_utc,
+                               message_text: str, origin_agent: str,
+                               origin_chat_id: int):
+    db = get_db()
+    db.scheduled_reminders.insert_one({
+        "to_agent": to_agent,
+        "employee_key": employee_key,
+        "run_at": run_at_utc,
+        "message_text": message_text,
+        "origin_agent": origin_agent,
+        "origin_chat_id": origin_chat_id,
+        "status": "pending",
+        "created_at": datetime.datetime.utcnow(),
+    })
+
+
+def get_due_reminders(to_agent: str):
+    """Hozirgi vaqtga yetib kelgan, hali bajarilmagan eslatmalarni qaytaradi."""
+    db = get_db()
+    now = datetime.datetime.utcnow()
+    return list(db.scheduled_reminders.find({
+        "to_agent": to_agent, "status": "pending", "run_at": {"$lte": now},
+    }))
+
+
+def mark_reminder_done(reminder_id):
+    db = get_db()
+    db.scheduled_reminders.update_one(
+        {"_id": reminder_id},
+        {"$set": {"status": "done", "done_at": datetime.datetime.utcnow()}},
+    )
+
+
+# ---------- Oxirgi yuborilgan rasm (tahrirlash uchun) ----------
+
+def save_last_photo(agent_key: str, chat_id: int, file_id: str):
+    db = get_db()
+    db.last_photos.update_one(
+        {"agent": agent_key, "chat_id": chat_id},
+        {"$set": {"file_id": file_id, "ts": datetime.datetime.utcnow()}},
+        upsert=True,
+    )
+
+
+def get_last_photo(agent_key: str, chat_id: int):
+    db = get_db()
+    doc = db.last_photos.find_one({"agent": agent_key, "chat_id": chat_id})
+    return doc["file_id"] if doc else None

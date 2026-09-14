@@ -167,3 +167,35 @@ def generate_image(prompt: str) -> bytes:
     except Exception as e:
         logger.exception("Rasm generatsiya qilishda xatolik: %s", e)
         return b""
+
+
+def edit_image(image_bytes: bytes, prompt: str) -> bytes:
+    """
+    Mavjud rasmni (image_bytes) berilgan tavsifga (prompt) mos ravishda
+    o'zgartiradi/tahrirlaydi - yangi rasm emas, xuddi shu rasmning
+    o'zgartirilgan versiyasini yaratadi.
+    """
+    try:
+        client = _get_openai()
+        image_file = io.BytesIO(image_bytes)
+        image_file.name = "image.png"
+        resp = client.images.edit(
+            model="gpt-image-1",
+            image=image_file,
+            prompt=prompt,
+        )
+        data = resp.data[0]
+
+        if getattr(data, "b64_json", None):
+            return base64.b64decode(data.b64_json)
+
+        if getattr(data, "url", None):
+            import httpx
+            r = httpx.get(data.url, timeout=30)
+            r.raise_for_status()
+            return r.content
+
+        return b""
+    except Exception as e:
+        logger.exception("Rasmni tahrirlashda xatolik: %s", e)
+        return b""

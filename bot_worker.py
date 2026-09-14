@@ -21,10 +21,15 @@ Bitta agent uchun to'liq ishchi mantiq:
     @username orqali mention qilib xabar yoziladi va javobi kutiladi.
   - Javobda [CREATE_FILE:pdf yoki docx] bo'lsa -> haqiqiy fayl
     generatsiya qilinib, Telegram orqali yuboriladi.
+  - Javobda [CREATE_IMAGE] bo'lsa -> yangi rasm generatsiya qilinadi;
+    [EDIT_IMAGE] bo'lsa -> foydalanuvchi oxirgi yuborgan rasm tahrirlanadi.
+  - Javobda [SCHEDULE_REMINDER:...] bo'lsa -> belgilangan vaqtda
+    xodimga avtomatik eslatma yuborish rejalashtiriladi.
   - Guruhda kimdir yozganda: agar bu username'dan javob kutilayotgan
     bo'lsa, xabar avtomatik asl so'rovchiga (origin_agent boti orqali)
     forward qilinadi.
-  - Fon rejimda: shu agentga tegishli 'pending' AI-vazifalarni bajaradi.
+  - Fon rejimda: shu agentga tegishli 'pending' AI-vazifalarni va
+    vaqti kelgan eslatmalarni bajaradi.
 """
 
 import re
@@ -32,6 +37,7 @@ import os
 import io
 import asyncio
 import logging
+import datetime
 from telegram import Update, InputFile
 from telegram.ext import (
     Application, MessageHandler, CommandHandler, ContextTypes, filters,
@@ -39,7 +45,9 @@ from telegram.ext import (
 
 from agents_config import AGENTS, GROUP_CHAT_ID, build_system_prompt
 from topics_config import TOPIC_MAP
-from llm_client import generate_reply, transcribe_voice, analyze_image, generate_image
+from llm_client import (
+    generate_reply, transcribe_voice, analyze_image, generate_image, edit_image,
+)
 import file_utils
 import web_utils
 import db
@@ -56,6 +64,11 @@ SEND_FILE_TO_HUMAN_RE = re.compile(
 )
 CREATE_IMAGE_RE = re.compile(r"\[CREATE_IMAGE\]\s*(.+)", re.DOTALL)
 SEND_IMAGE_TO_HUMAN_RE = re.compile(r"\[SEND_IMAGE_TO_HUMAN:(\w+)\]\s*(.+)", re.DOTALL)
+EDIT_IMAGE_RE = re.compile(r"\[EDIT_IMAGE\]\s*(.+)", re.DOTALL)
+SCHEDULE_REMINDER_RE = re.compile(
+    r"\[SCHEDULE_REMINDER:(\w+):(\w+):(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]\s*(.+)",
+    re.DOTALL,
+)
 
 GROUP_TYPES = ("group", "supergroup")
 
@@ -71,6 +84,42 @@ def _parse_fields(raw: str) -> dict:
             k, v = part.split("=", 1)
             fields[k.strip().lower()] = v.strip()
     return fields
+
+
+async def send_message_to_employee(bot, agent_key: str, cfg: dict,
+                                     employee_key: str, message_text: str,
+                                     origin_chat_id: int):
+    """
+    Xodimga guruhda (yoki uning topicida) @mention orqali xabar yuboradi
+    va javobini kuzatish uchun yozuv yaratadi. Bu funksiya HAM oddiy
+    MESSAGE_HUMAN oqimida, HAM vaqt bilan rejalashtirilgan eslatmalarda
+    (reminder_checker_loop) ishlatiladi - shu bilan ikkala joyda bir xil
+    mantiq takrorlanmaydi.
+
+    Qaytaradi: (muvaffaqiyatli_bo'ldimi: bool, xodim_hujjati yoki None)
+    """
+    employee = db.get_employee(employee_key)
+    if not (employee and employee.get("username") and employee["username"] != "-" and GROUP_CHAT_ID):
+        return False, None
+
+    target_thread = REVERSE_TOPIC_MAP.get(employee_key)  # ehtiyot uchun (odatda yo'q)
+    if target_thread is None:
+        target_thread = REVERSE_TOPIC_MAP.get(agent_key)  # o'z bo'limi topici
+
+    mention_text = (
+        f"📩 @{employee['username']}, {cfg['display_name']}dan xabar:\n\n"
+        f"{message_text}"
+    )
+    send_kwargs = {"chat_id": int(GROUP_CHAT_ID), "text": mention_text}
+    if target_thread is not None:
+        send_kwargs["message_thread_id"] = target_thread
+    await bot.send_message(**send_kwargs)
+
+    db.create_human_task(
+        employee_key, employee["username"], int(GROUP_CHAT_ID),
+        target_thread, message_text, origin_chat_id, agent_key,
+    )
+    return True, employee
 
 
 def build_worker(agent_key: str, bots: dict) -> Application:
@@ -210,25 +259,10 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             message_text = human_match.group(2).strip()
             visible_reply = reply[: human_match.start()].strip()
 
-            employee = db.get_employee(employee_key)
-            if employee and employee.get("username") and employee["username"] != "-" and GROUP_CHAT_ID:
-                target_thread = REVERSE_TOPIC_MAP.get(employee_key)  # ehtiyot uchun (odatda yo'q)
-                if target_thread is None:
-                    target_thread = REVERSE_TOPIC_MAP.get(agent_key)  # o'z bo'limi topici
-
-                mention_text = (
-                    f"📩 @{employee['username']}, {cfg['display_name']}dan xabar:\n\n"
-                    f"{message_text}"
-                )
-                send_kwargs = {"chat_id": int(GROUP_CHAT_ID), "text": mention_text}
-                if target_thread is not None:
-                    send_kwargs["message_thread_id"] = target_thread
-                await context.bot.send_message(**send_kwargs)
-
-                db.create_human_task(
-                    employee_key, employee["username"], int(GROUP_CHAT_ID),
-                    target_thread, message_text, chat_id, agent_key,
-                )
+            ok, employee = await send_message_to_employee(
+                context.bot, agent_key, cfg, employee_key, message_text, chat_id
+            )
+            if ok:
                 visible_reply += (
                     f"\n\n📨 Xabar guruhda @{employee['username']}ga yuborildi. "
                     "Javob kelgach, sizga darhol xabar beraman."
@@ -311,6 +345,36 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             else:
                 visible_reply += "\n\n⚠️ Rasmni generatsiya qilishda xatolik yuz berdi."
 
+        # d3) Mavjud (oxirgi yuborilgan) rasmni tahrirlash
+        edit_image_match = EDIT_IMAGE_RE.search(reply)
+        if edit_image_match:
+            edit_prompt = edit_image_match.group(1).strip()
+            visible_reply = reply[: edit_image_match.start()].strip()
+
+            last_file_id = db.get_last_photo(agent_key, chat_id)
+            if not last_file_id:
+                visible_reply += (
+                    "\n\n⚠️ Tahrirlanadigan rasm topilmadi - iltimos, "
+                    "avval rasmni yuboring."
+                )
+            else:
+                try:
+                    tg_file = await context.bot.get_file(last_file_id)
+                    original_bytes = bytes(await tg_file.download_as_bytearray())
+                    edited_bytes = edit_image(original_bytes, edit_prompt)
+                    if edited_bytes:
+                        await context.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=InputFile(io.BytesIO(edited_bytes), filename="tahrirlangan.png"),
+                            message_thread_id=origin_thread_id,
+                        )
+                        visible_reply += "\n\n🖼 Tahrirlangan rasm tayyor va yuborildi."
+                    else:
+                        visible_reply += "\n\n⚠️ Rasmni tahrirlashda xatolik yuz berdi."
+                except Exception as e:
+                    logger.exception("Rasm tahrirlashda xatolik: %s", e)
+                    visible_reply += "\n\n⚠️ Rasmni tahrirlashda xatolik yuz berdi."
+
         # d2) Xodimga guruhda rasm yuborish
         send_image_match = SEND_IMAGE_TO_HUMAN_RE.search(reply)
         if send_image_match:
@@ -351,6 +415,38 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     f"\n\n⚠️ '{employee_key}' xodimi topilmadi yoki "
                     "GROUP_CHAT_ID sozlanmagan."
                 )
+
+        # e) Vaqt bilan rejalashtirilgan eslatma
+        schedule_match = SCHEDULE_REMINDER_RE.search(reply)
+        if schedule_match:
+            target_agent = schedule_match.group(1).strip().lower()
+            employee_key = schedule_match.group(2).strip().lower()
+            datetime_str = schedule_match.group(3).strip()
+            reminder_text = schedule_match.group(4).strip()
+            visible_reply = reply[: schedule_match.start()].strip()
+
+            if target_agent not in AGENTS:
+                visible_reply += (
+                    f"\n\n⚠️ '{target_agent}' nomli bo'lim mavjud emas. "
+                    f"Mavjud bo'limlar: {', '.join(AGENTS.keys())}."
+                )
+            else:
+                try:
+                    naive_dt = datetime.datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
+                    run_at_utc = naive_dt - datetime.timedelta(hours=5)  # Toshkent -> UTC
+                    db.create_scheduled_reminder(
+                        target_agent, employee_key, run_at_utc, reminder_text,
+                        agent_key, chat_id,
+                    )
+                    target_display = AGENTS[target_agent]["display_name"]
+                    visible_reply += (
+                        f"\n\n⏰ Eslatma rejalashtirildi: {datetime_str} "
+                        f"(Toshkent vaqti) - {target_display} bajaradi. "
+                        "Natijasini sizga xabar qilaman."
+                    )
+                except Exception as e:
+                    logger.exception("Eslatma rejalashtirishda xatolik: %s", e)
+                    visible_reply += "\n\n⚠️ Eslatmani rejalashtirishda xatolik yuz berdi."
 
         db.save_message(agent_key, chat_id, "assistant", visible_reply)
         await update.message.reply_text(visible_reply)
@@ -466,6 +562,10 @@ def build_worker(agent_key: str, bots: dict) -> Application:
         tg_file = await photo.get_file()
         photo_bytes = bytes(await tg_file.download_as_bytearray())
 
+        # Keyinchalik "shu rasmni tahrirla" desa foydalanish uchun
+        # oxirgi yuborilgan rasmning file_id'sini saqlab qo'yamiz.
+        db.save_last_photo(agent_key, update.effective_chat.id, photo.file_id)
+
         description = analyze_image(
             cfg["provider"], cfg["model"], photo_bytes,
             "Bu rasmda nima ko'rinib turibdi? Batafsil va aniq tasvirlab "
@@ -574,5 +674,49 @@ async def task_checker_loop(agent_key: str, bots: dict, interval_sec: int = 20):
                 db.save_message(origin_agent_key, task["origin_chat_id"], "assistant", text)
         except Exception:
             logger.exception("task_checker_loop xatolik (%s)", agent_key)
+
+        await asyncio.sleep(interval_sec)
+
+
+async def reminder_checker_loop(agent_key: str, bots: dict, interval_sec: int = 60):
+    """
+    Fon rejimida: shu agentga rejalashtirilgan, vaqti kelgan eslatmalarni
+    tekshirib, xodimga guruhda @mention orqali yuboradi. Natija - "kim
+    rejalashtirgan bo'lsa o'sha bo'lim (origin_agent) boti orqali",
+    aynan so'ragan chatga qaytariladi (xuddi task_checker_loop kabi).
+    Xodimning keyingi javobi esa mavjud human_task mexanizmi orqali
+    (try_handle_employee_reply) avtomatik forward qilinadi.
+    """
+    cfg = AGENTS[agent_key]
+    bot = bots[agent_key]
+    while True:
+        try:
+            due = db.get_due_reminders(agent_key)
+            for reminder in due:
+                ok, employee = await send_message_to_employee(
+                    bot, agent_key, cfg, reminder["employee_key"],
+                    reminder["message_text"], reminder["origin_chat_id"],
+                )
+                db.mark_reminder_done(reminder["_id"])
+
+                origin_agent_key = reminder.get("origin_agent", agent_key)
+                origin_bot = bots.get(origin_agent_key) or bot
+
+                if ok:
+                    text = (
+                        f"⏰ {cfg['display_name']}: rejalashtirilgan eslatma "
+                        f"@{employee['username']}ga yuborildi. Javob kelgach "
+                        "sizga xabar beraman."
+                    )
+                else:
+                    text = (
+                        f"⚠️ {cfg['display_name']}: rejalashtirilgan eslatmani "
+                        f"yuborib bo'lmadi - xodim topilmadi yoki "
+                        "GROUP_CHAT_ID sozlanmagan."
+                    )
+                await origin_bot.send_message(chat_id=reminder["origin_chat_id"], text=text)
+                db.save_message(origin_agent_key, reminder["origin_chat_id"], "assistant", text)
+        except Exception:
+            logger.exception("reminder_checker_loop xatolik (%s)", agent_key)
 
         await asyncio.sleep(interval_sec)

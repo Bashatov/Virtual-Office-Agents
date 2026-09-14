@@ -15,7 +15,7 @@ import logging
 from dotenv import load_dotenv
 
 from agents_config import AGENTS
-from bot_worker import build_worker, task_checker_loop
+from bot_worker import build_worker, task_checker_loop, reminder_checker_loop
 
 load_dotenv()
 
@@ -48,7 +48,8 @@ async def main():
 
     # 3) Fon-vazifa tekshiruvchilarini ishga tushiramiz
     await asyncio.gather(
-        *(task_checker_loop(key, bots) for key in AGENTS)
+        *(task_checker_loop(key, bots) for key in AGENTS),
+        *(reminder_checker_loop(key, bots) for key in AGENTS),
     )
 
 
