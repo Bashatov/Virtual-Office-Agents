@@ -85,7 +85,8 @@ istalgan vaqt o'zgartirish mumkin.
   video emas.)
 - **Fayl yaratish**: "buni PDF/Word qilib ber" desangiz, bot haqiqiy
   `.pdf` yoki `.docx` fayl generatsiya qilib, to'g'ridan-to'g'ri
-  Telegram orqali yuboradi.
+  Telegram orqali yuboradi. "Buni operatorga PDF qilib yubor"
+  desangiz esa, fayl guruhda o'sha xodimga @mention qilib yuboriladi.
 - **Ovozli xabarlar**: botlarga ovozli xabar yuborsangiz, ular uni
   avtomatik matnga o'girib (Whisper orqali), tushunib, matn holida
   javob qaytaradi.

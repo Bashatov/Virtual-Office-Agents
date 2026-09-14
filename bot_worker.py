@@ -50,6 +50,9 @@ MESSAGE_HUMAN_RE = re.compile(r"\[MESSAGE_HUMAN:(\w+)\]\s*(.+)", re.DOTALL)
 ADD_EMPLOYEE_RE = re.compile(r"\[ADD_EMPLOYEE:(\w+)\]\s*(.+)", re.DOTALL)
 DELETE_EMPLOYEE_RE = re.compile(r"\[DELETE_EMPLOYEE:(\w+)\]")
 CREATE_FILE_RE = re.compile(r"\[CREATE_FILE:(pdf|docx)\]\s*(.+)", re.DOTALL)
+SEND_FILE_TO_HUMAN_RE = re.compile(
+    r"\[SEND_FILE_TO_HUMAN:(\w+):(pdf|docx)\]\s*(.+)", re.DOTALL
+)
 
 GROUP_TYPES = ("group", "supergroup")
 
@@ -222,6 +225,61 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     f"\n\n📨 Xabar guruhda @{employee['username']}ga yuborildi. "
                     "Javob kelgach, sizga darhol xabar beraman."
                 )
+            else:
+                visible_reply += (
+                    f"\n\n⚠️ '{employee_key}' xodimi topilmadi yoki "
+                    "GROUP_CHAT_ID sozlanmagan."
+                )
+
+        # c2) Xodimga guruhda fayl (PDF/Word) yuborish
+        send_file_match = SEND_FILE_TO_HUMAN_RE.search(reply)
+        if send_file_match:
+            employee_key = send_file_match.group(1).strip().lower()
+            file_type = send_file_match.group(2).strip().lower()
+            body_raw = send_file_match.group(3).strip()
+            visible_reply = reply[: send_file_match.start()].strip()
+
+            employee = db.get_employee(employee_key)
+            if employee and employee.get("username") and employee["username"] != "-" and GROUP_CHAT_ID:
+                parts = body_raw.split("\n", 1)
+                title = (parts[0].strip() or "Hujjat")[:60]
+                body_text = parts[1].strip() if len(parts) > 1 else ""
+
+                try:
+                    if file_type == "docx":
+                        file_bytes = file_utils.create_docx(title, body_text)
+                        filename = f"{title}.docx"
+                    else:
+                        file_bytes = file_utils.create_pdf(title, body_text)
+                        filename = f"{title}.pdf"
+
+                    target_thread = REVERSE_TOPIC_MAP.get(employee_key)
+                    if target_thread is None:
+                        target_thread = REVERSE_TOPIC_MAP.get(agent_key)
+
+                    send_kwargs = {
+                        "chat_id": int(GROUP_CHAT_ID),
+                        "document": InputFile(io.BytesIO(file_bytes), filename=filename),
+                        "caption": (
+                            f"📎 @{employee['username']}, {cfg['display_name']}dan fayl:"
+                        ),
+                    }
+                    if target_thread is not None:
+                        send_kwargs["message_thread_id"] = target_thread
+                    await context.bot.send_document(**send_kwargs)
+
+                    db.create_human_task(
+                        employee_key, employee["username"], int(GROUP_CHAT_ID),
+                        target_thread, f"[Fayl yuborildi: {filename}]",
+                        chat_id, agent_key,
+                    )
+                    visible_reply += (
+                        f"\n\n📎 Fayl guruhda @{employee['username']}ga yuborildi "
+                        f"({filename}). Javob kelgach, sizga xabar beraman."
+                    )
+                except Exception as e:
+                    logger.exception("Xodimga fayl yuborishda xatolik: %s", e)
+                    visible_reply += "\n\n⚠️ Faylni yuborishda xatolik yuz berdi."
             else:
                 visible_reply += (
                     f"\n\n⚠️ '{employee_key}' xodimi topilmadi yoki "
