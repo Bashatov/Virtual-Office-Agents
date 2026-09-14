@@ -125,11 +125,11 @@ a'zo sifatida qo'shilgan bo'lishi kifoya, admin bo'lishi shart emas).
    funksiyasini yoqing.
 2. Har bir bo'lim uchun alohida topic yarating (masalan "Marketolog",
    "SMM", "Moliya" va h.k.).
-3. Har bir topic ichida bitta test xabar yozing.
-4. Brauzerda oching: `https://api.telegram.org/bot<ISTALGAN_TOKEN>/getUpdates`
-   — javobda shu xabar uchun `"message_thread_id": <raqam>` ni
-   topasiz. Har bir topic uchun shu raqamni yozib boring.
-5. GitHub'da `topics_config.py` faylini oching, `TOPIC_MAP` ichiga
+3. Har bir topic ichida shunday yozing: `/topicid`
+   Bot darhol o'sha joyning ID raqamini javob qilib beradi (barcha 6 ta
+   bot ko'rishi mumkin bo'lgani uchun bir nechta bir xil javob kelishi
+   mumkin — bu normal, faqat raqamga qarang).
+4. GitHub'da `topics_config.py` faylini oching, `TOPIC_MAP` ichiga
    qo'shing:
    ```python
    TOPIC_MAP = {
@@ -143,7 +143,7 @@ a'zo sifatida qo'shilgan bo'lishi kifoya, admin bo'lishi shart emas).
    ```
    (Raqamlar — sizning topic ID'laringiz, o'ng tomondagi nom esa
    `agents_config.py`dagi agent kaliti bilan bir xil bo'lishi kerak.)
-6. Commit qiling — Railway avtomatik qayta deploy qiladi.
+5. Commit qiling — Railway avtomatik qayta deploy qiladi.
 
 ## Keyingi kuchaytirishlar (ixtiyoriy)
 

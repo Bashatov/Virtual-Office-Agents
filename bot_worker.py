@@ -33,7 +33,9 @@ import io
 import asyncio
 import logging
 from telegram import Update, InputFile
-from telegram.ext import Application, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    Application, MessageHandler, CommandHandler, ContextTypes, filters,
+)
 
 from agents_config import AGENTS, GROUP_CHAT_ID, build_system_prompt
 from topics_config import TOPIC_MAP
@@ -378,6 +380,24 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             "asoslangan, to'liq video emas.)"
         )
         await process_user_text(update.effective_chat.id, user_text, update, context)
+
+    # ---------- /topicid - topic ID'ni tezda topish uchun yordamchi buyruq ----------
+
+    async def handle_topicid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        thread_id = getattr(update.message, "message_thread_id", None)
+        if thread_id is None:
+            await update.message.reply_text(
+                "Bu — General (asosiy) mavzu, uning alohida thread_id'si "
+                "yo'q. Bu yerga botlar faqat @mention orqali chaqiriladi."
+            )
+        else:
+            await update.message.reply_text(
+                f"Bu topic'ning ID raqami: {thread_id}\n\n"
+                f"topics_config.py fayliga shunday qo'shing:\n"
+                f"{thread_id}: \"<agent_key>\","
+            )
+
+    app.add_handler(CommandHandler("topicid", handle_topicid))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
