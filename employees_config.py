@@ -15,9 +15,8 @@ QANDAY QO'SHISH KERAK:
 """
 
 EMPLOYEES = {
-    # Namuna - o'zingiznikini shunga o'xshab qo'shing:
-    # "akobir": {
-    #     "display_name": "Akobir (Videograf)",
-    #     "chat_id": -1001234567890,
-    # },
+    "moon": {
+    "display_name": "Moon (Operator)",
+    "chat_id": 722156579,   
+},
 }
