@@ -81,15 +81,35 @@ istalgan vaqt o'zgartirish mumkin.
 - **Ovozli xabarlar**: botlarga ovozli xabar yuborsangiz, ular uni
   avtomatik matnga o'girib (Whisper orqali), tushunib, matn holida
   javob qaytaradi.
-- **Haqiqiy xodimga xabar**: Direktorga "operatorga ayt..." desangiz,
-  u ro'yxatdagi xodimga to'g'ridan-to'g'ri Telegram xabar yuboradi va
-  javobini kutib, kelgach sizga darhol yetkazadi.
+- **Xodimga xabar**: Direktorga (yoki istalgan bo'limga) "operatorga
+  ayt..." desangiz, bot guruhda xodimni @username orqali mention
+  qilib xabar yozadi va javobini kutib, kelgach sizga darhol yetkazadi
+  (batafsili pastda).
 - **Topic'lar (mavzular)**: agar guruhingizda Telegram Topics
   (Forum) yoqilgan bo'lsa va videodagidek har bir bo'lim uchun
   alohida topic ochgan bo'lsangiz, `topics_config.py` orqali har
   bir topicni tegishli botga bog'lab qo'yish mumkin — shunda o'sha
   topicda yozilgan har qanday xabarga (@mention shart emas) faqat
   o'sha bo'lim boti avtomatik javob beradi.
+
+## Xodim qo'shish (fayl tahrirlash shart emas!)
+
+Endi xodim qo'shish uchun GitHub'ga kirish kerak emas — to'g'ridan-to'g'ri
+Direktorga (yoki istalgan boshqa botga) yozing, masalan:
+
+> "Yangi xodim qo'sh: Akobir Tursunov, telefon +998901234567, sohasi —
+> videograf, Telegram username'i @akobir_video"
+
+Bot buni tushunib, avtomatik MongoDB'ga saqlaydi. Shundan keyin istalgan
+bo'lim botiga "Akobirga ayt, ertaga soat 10da syomka bormi" desangiz —
+bot **guruhda, @akobir_video'ni mention qilib** xabar yozadi (agar
+o'sha botning o'z topici bo'lsa — shu topicda, aks holda umumiy
+guruhda). Akobir o'sha yerda javob yozishi bilan, javob avtomatik
+so'ragan odamga forward qilinadi.
+
+**Muhim shart**: xodim mention orqali xabar ololishi uchun, u albatta
+"Virtual Ofis" guruhingizning a'zosi bo'lishi kerak (guruhga oddiy
+a'zo sifatida qo'shilgan bo'lishi kifoya, admin bo'lishi shart emas).
 
 ## Topic'larni botlarga bog'lash (ixtiyoriy, lekin tavsiya etiladi)
 

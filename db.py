@@ -1,16 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-MongoDB Atlas (bepul tarif) bilan ishlash.
-Uch asosiy to'plam (collection):
-  - conversations: har bir agent + foydalanuvchi uchun suhbat tarixi (xotira)
-  - tasks: Direktor tomonidan boshqa AI bo'limlarga berilgan topshiriqlar
-  - human_tasks: Direktor tomonidan haqiqiy xodimga yuborilgan xabarlar
-    va ularning javobi kutilayotgan holati
+MongoDB Atlas bilan ishlash. To'plamlar (collection):
+  - conversations: har bir agent + foydalanuvchi suhbat tarixi (xotira)
+  - tasks: Direktordan boshqa AI bo'limlarga berilgan vazifalar
+  - employees: xodimlar ro'yxati (Direktorga yozib qo'shiladi, fayl
+    tahrirlash shart emas)
+  - human_tasks: xodimga guruhda @mention orqali yuborilgan xabarlar va
+    ularning javobi kutilayotgan holati
 """
 
 import os
 import datetime
-from pymongo import MongoClient
+from pymongo import MongoClient, ReturnDocument
 
 _client = None
 _db = None
@@ -81,17 +82,46 @@ def mark_task_done(task_id, result_text: str):
     )
 
 
-# ---------- Haqiqiy xodimga yuborilgan xabarlar ----------
+# ---------- Xodimlar (Direktorga yozib qo'shiladi, DB'da saqlanadi) ----------
 
-def create_human_task(employee_key: str, employee_chat_id: int,
-                       message_text: str, origin_chat_id: int,
-                       origin_agent: str):
-    """Direktor xodimga xabar yuborganda chaqiriladi."""
+def add_employee(key: str, name: str, phone: str, sohasi: str, username: str):
+    db = get_db()
+    db.employees.update_one(
+        {"key": key},
+        {"$set": {
+            "key": key,
+            "name": name,
+            "phone": phone,
+            "sohasi": sohasi,
+            "username": username.lstrip("@"),
+            "updated_at": datetime.datetime.utcnow(),
+        }},
+        upsert=True,
+    )
+
+
+def get_employee(key: str):
+    db = get_db()
+    return db.employees.find_one({"key": key})
+
+
+def list_employees():
+    db = get_db()
+    return list(db.employees.find({}))
+
+
+# ---------- Xodimga guruhda @mention orqali yuborilgan xabarlar ----------
+
+def create_human_task(employee_key: str, employee_username: str,
+                       group_chat_id: int, thread_id, message_text: str,
+                       origin_chat_id: int, origin_agent: str):
     db = get_db()
     db.human_tasks.insert_one(
         {
             "employee_key": employee_key,
-            "employee_chat_id": employee_chat_id,
+            "employee_username": employee_username,
+            "group_chat_id": group_chat_id,
+            "thread_id": thread_id,
             "message_text": message_text,
             "origin_chat_id": origin_chat_id,
             "origin_agent": origin_agent,
@@ -101,19 +131,25 @@ def create_human_task(employee_key: str, employee_chat_id: int,
     )
 
 
-def get_waiting_human_task(employee_chat_id: int):
-    """Shu xodimdan javob kutilayotgan eng so'nggi vazifani topadi."""
+def claim_human_task_by_username(group_chat_id: int, username: str, reply_text: str):
+    """
+    Guruhda kimdir yozganda chaqiriladi: agar shu username'dan javob
+    kutilayotgan vazifa bo'lsa, uni ATOMAR ravishda "band qiladi" -
+    shu bilan 6 ta bot bir xabarni 6 marta forward qilib yubormaydi
+    (faqat birinchi ulgurgan bot vazifani "yutib oladi").
+    """
     db = get_db()
-    return db.human_tasks.find_one(
-        {"employee_chat_id": employee_chat_id, "status": "waiting_reply"},
+    return db.human_tasks.find_one_and_update(
+        {
+            "group_chat_id": group_chat_id,
+            "employee_username": username,
+            "status": "waiting_reply",
+        },
+        {"$set": {
+            "status": "replied",
+            "reply_text": reply_text,
+            "replied_at": datetime.datetime.utcnow(),
+        }},
         sort=[("created_at", -1)],
-    )
-
-
-def mark_human_task_replied(task_id, reply_text: str):
-    db = get_db()
-    db.human_tasks.update_one(
-        {"_id": task_id},
-        {"$set": {"status": "replied", "reply_text": reply_text,
-                   "replied_at": datetime.datetime.utcnow()}},
+        return_document=ReturnDocument.AFTER,
     )

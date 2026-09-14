@@ -3,16 +3,20 @@
 Bitta agent uchun to'liq ishchi mantiq:
 
   - Shaxsiy chatda: har doim javob beradi.
-  - Guruh chatida: FAQAT quyidagi hollarda javob beradi (bekorga
-    aralashib, xodimlarning o'zaro suhbatiga xalaqit bermaslik uchun):
-      1) @botusername orqali chaqirilsa
-      2) shu botning oldingi xabariga "reply" qilingan bo'lsa
-      3) xabar bot nomi bilan boshlansa (masalan "Marketolog, ...")
+  - Guruh chatida: FAQAT quyidagi hollarda javob beradi:
+      1) shu botning o'z topic'ida (topics_config.py orqali) yozilgan bo'lsa
+      2) @botusername orqali chaqirilsa
+      3) shu botning oldingi xabariga "reply" qilingan bo'lsa
+      4) xabar bot nomi bilan boshlansa (masalan "Marketolog, ...")
 
   - Matn, fayl (.txt/.docx/.pdf) va ovozli xabarlarni qabul qiladi.
   - Javobda [DELEGATE:agent_key] bo'lsa -> AI bo'limga vazifa yaratiladi.
-  - Javobda [MESSAGE_HUMAN:employee_key] bo'lsa -> xodimga to'g'ridan-
-    to'g'ri Telegram xabar yuboriladi va javobi kutiladi.
+  - Javobda [ADD_EMPLOYEE:key] bo'lsa -> yangi xodim MongoDB'ga saqlanadi.
+  - Javobda [MESSAGE_HUMAN:employee_key] bo'lsa -> guruhda xodimga
+    @username orqali mention qilib xabar yoziladi va javobi kutiladi.
+  - Guruhda kimdir yozganda: agar bu username'dan javob kutilayotgan
+    bo'lsa, xabar avtomatik asl so'rovchiga (origin_agent boti orqali)
+    forward qilinadi.
   - Fon rejimda: shu agentga tegishli 'pending' AI-vazifalarni bajaradi.
 """
 
@@ -23,8 +27,7 @@ import logging
 from telegram import Update
 from telegram.ext import Application, MessageHandler, ContextTypes, filters
 
-from agents_config import AGENTS, GROUP_CHAT_ID
-from employees_config import EMPLOYEES
+from agents_config import AGENTS, GROUP_CHAT_ID, build_system_prompt
 from topics_config import TOPIC_MAP
 from llm_client import generate_reply, transcribe_voice
 import file_utils
@@ -34,11 +37,25 @@ logger = logging.getLogger(__name__)
 
 DELEGATE_RE = re.compile(r"\[DELEGATE:(\w+)\]\s*(.+)", re.DOTALL)
 MESSAGE_HUMAN_RE = re.compile(r"\[MESSAGE_HUMAN:(\w+)\]\s*(.+)", re.DOTALL)
+ADD_EMPLOYEE_RE = re.compile(r"\[ADD_EMPLOYEE:(\w+)\]\s*(.+)", re.DOTALL)
 
 GROUP_TYPES = ("group", "supergroup")
 
+# {thread_id: agent_key} -> teskarisini olamiz: {agent_key: thread_id}
+REVERSE_TOPIC_MAP = {v: k for k, v in TOPIC_MAP.items()}
 
-def build_worker(agent_key: str) -> Application:
+
+def _parse_fields(raw: str) -> dict:
+    """'name=Akobir|phone=+998...|sohasi=Video|username=@akobir' -> dict"""
+    fields = {}
+    for part in raw.split("|"):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            fields[k.strip().lower()] = v.strip()
+    return fields
+
+
+def build_worker(agent_key: str, bots: dict) -> Application:
     cfg = AGENTS[agent_key]
     token = os.getenv(cfg["token_env"])
     if not token:
@@ -56,8 +73,7 @@ def build_worker(agent_key: str) -> Application:
         msg = update.message
         text = (msg.text or msg.caption or "").strip()
 
-        # 1) shu bot O'ZINING topic'ida (kabinetida) yozilganmi -
-        #    bu yerda @mention shart emas, avtomatik javob beradi
+        # 1) shu bot O'ZINING topic'ida yozilganmi - @mention shart emas
         thread_id = getattr(msg, "message_thread_id", None)
         if thread_id is not None and TOPIC_MAP.get(thread_id) == agent_key:
             return True
@@ -86,32 +102,15 @@ def build_worker(agent_key: str) -> Application:
 
     async def process_user_text(chat_id: int, user_text: str, update: Update,
                                  context: ContextTypes.DEFAULT_TYPE):
-        # 1) Bu xabar - biror xodimdan kutilayotgan javobmi?
-        pending_human_task = db.get_waiting_human_task(chat_id)
-        if pending_human_task:
-            db.mark_human_task_replied(pending_human_task["_id"], user_text)
-            employee_name = EMPLOYEES.get(
-                pending_human_task["employee_key"], {}
-            ).get("display_name", pending_human_task["employee_key"])
-
-            reply_text = f"📩 {employee_name} javob berdi:\n\n{user_text}"
-            await context.bot.send_message(
-                chat_id=pending_human_task["origin_chat_id"], text=reply_text
-            )
-            await update.message.reply_text("✅ Javobingiz uzatildi, rahmat!")
-            return
-
-        # 2) Oddiy AI-suhbat oqimi
         db.save_message(agent_key, chat_id, "user", user_text)
         history = db.get_history(agent_key, chat_id)
 
-        reply = generate_reply(
-            cfg["provider"], cfg["model"], cfg["system_prompt"], history
-        )
+        system_prompt = build_system_prompt(agent_key)
+        reply = generate_reply(cfg["provider"], cfg["model"], system_prompt, history)
 
         visible_reply = reply
 
-        # 2a) AI bo'limga delegatsiya
+        # a) AI bo'limga delegatsiya
         delegate_match = DELEGATE_RE.search(reply)
         if delegate_match:
             to_agent = delegate_match.group(1).strip().lower()
@@ -123,40 +122,91 @@ def build_worker(agent_key: str) -> Application:
                     f"\n\n📋 Vazifa {AGENTS[to_agent]['display_name']}ga berildi."
                 )
 
-        # 2b) Haqiqiy xodimga xabar yuborish
+        # b) Yangi xodim qo'shish
+        add_emp_match = ADD_EMPLOYEE_RE.search(reply)
+        if add_emp_match:
+            emp_key = add_emp_match.group(1).strip().lower()
+            fields = _parse_fields(add_emp_match.group(2))
+            visible_reply = reply[: add_emp_match.start()].strip()
+            db.add_employee(
+                emp_key,
+                fields.get("name", "-"),
+                fields.get("phone", "-"),
+                fields.get("sohasi", "-"),
+                fields.get("username", "-"),
+            )
+            visible_reply += (
+                f"\n\n✅ Xodim ro'yxatga qo'shildi: {fields.get('name', emp_key)} "
+                f"({emp_key})."
+            )
+
+        # c) Xodimga guruhda @mention orqali xabar yuborish
         human_match = MESSAGE_HUMAN_RE.search(reply)
         if human_match:
             employee_key = human_match.group(1).strip().lower()
             message_text = human_match.group(2).strip()
             visible_reply = reply[: human_match.start()].strip()
 
-            employee = EMPLOYEES.get(employee_key)
-            if employee and employee.get("chat_id"):
-                await context.bot.send_message(
-                    chat_id=employee["chat_id"],
-                    text=f"📩 Yangi xabar ({cfg['display_name']}dan):\n\n{message_text}",
+            employee = db.get_employee(employee_key)
+            if employee and employee.get("username") and employee["username"] != "-" and GROUP_CHAT_ID:
+                target_thread = REVERSE_TOPIC_MAP.get(employee_key)  # ehtiyot uchun (odatda yo'q)
+                if target_thread is None:
+                    target_thread = REVERSE_TOPIC_MAP.get(agent_key)  # o'z bo'limi topici
+
+                mention_text = (
+                    f"📩 @{employee['username']}, {cfg['display_name']}dan xabar:\n\n"
+                    f"{message_text}"
                 )
+                send_kwargs = {"chat_id": int(GROUP_CHAT_ID), "text": mention_text}
+                if target_thread is not None:
+                    send_kwargs["message_thread_id"] = target_thread
+                await context.bot.send_message(**send_kwargs)
+
                 db.create_human_task(
-                    employee_key, employee["chat_id"], message_text,
-                    chat_id, agent_key,
+                    employee_key, employee["username"], int(GROUP_CHAT_ID),
+                    target_thread, message_text, chat_id, agent_key,
                 )
                 visible_reply += (
-                    f"\n\n📨 Xabar {employee['display_name']}ga yuborildi. "
+                    f"\n\n📨 Xabar guruhda @{employee['username']}ga yuborildi. "
                     "Javob kelgach, sizga darhol xabar beraman."
                 )
             else:
                 visible_reply += (
                     f"\n\n⚠️ '{employee_key}' xodimi topilmadi yoki "
-                    "chat_id sozlanmagan (employees_config.py'ni tekshiring)."
+                    "GROUP_CHAT_ID sozlanmagan."
                 )
 
         db.save_message(agent_key, chat_id, "assistant", visible_reply)
         await update.message.reply_text(visible_reply)
 
+    # ---------- Guruhda xodimning javobini aniqlash ----------
+
+    async def try_handle_employee_reply(update: Update) -> bool:
+        """True qaytarsa - bu xabar xodim javobi edi va allaqachon forward qilindi."""
+        chat = update.effective_chat
+        if chat.type not in GROUP_TYPES:
+            return False
+        user = update.message.from_user
+        username = (user.username or "") if user else ""
+        if not username:
+            return False
+
+        claimed = db.claim_human_task_by_username(chat.id, username, update.message.text or "")
+        if not claimed:
+            return False
+
+        origin_bot = bots.get(claimed.get("origin_agent")) or bots.get(agent_key)
+        text = f"📩 @{username} javob berdi:\n\n{update.message.text}"
+        await origin_bot.send_message(chat_id=claimed["origin_chat_id"], text=text)
+        await update.message.reply_text("✅ Javobingiz uzatildi, rahmat!")
+        return True
+
     # ---------- Matn xabarlari ----------
 
     async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not update.message or not update.message.text:
+            return
+        if await try_handle_employee_reply(update):
             return
         if not await is_addressed(update, context):
             return
@@ -217,19 +267,16 @@ async def task_checker_loop(agent_key: str, bots: dict, interval_sec: int = 20):
     """
     Fon rejimida: shu agentga berilgan yangi AI-vazifalarni tekshirib bajaradi.
     Natija - vazifani KIM SO'RAGAN bo'lsa o'sha bo'lim (from_agent) boti
-    orqali, aynan so'ragan chatga (origin_chat_id) qaytariladi. Masalan:
-    foydalanuvchi Direktordan SMM'ga vazifa berdirsa, SMM bajargach,
-    natija Direktor boti orqali foydalanuvchiga qaytadi - guruhga emas.
+    orqali, aynan so'ragan chatga (origin_chat_id) qaytariladi.
     """
     cfg = AGENTS[agent_key]
     while True:
         try:
             pending = db.get_pending_tasks(agent_key)
             for task in pending:
+                system_prompt = build_system_prompt(agent_key)
                 history = [{"role": "user", "content": task["task_text"]}]
-                result = generate_reply(
-                    cfg["provider"], cfg["model"], cfg["system_prompt"], history
-                )
+                result = generate_reply(cfg["provider"], cfg["model"], system_prompt, history)
                 db.mark_task_done(task["_id"], result)
 
                 origin_agent_key = task.get("from_agent", agent_key)
