@@ -21,11 +21,10 @@ oddiy guruh xabari sifatida ishlaydi (faqat @mention orqali chaqiriladi).
 """
 
 TOPIC_MAP = {
-    # Namuna - topic ID'ni topgach shunga o'xshab to'ldiring:
-    # 12: "marketolog",
-    # 15: "smm",
-    # 18: "moliya",
-    # 21: "mobilograf",
-    # 24: "dizayner",
-    # 27: "direktor",
+   179: "mobilograf",
+   180: "dizayner",
+   181: "marketolog",
+   178: "moliya",
+   5: "smm",
+   6: "direktor"
 }
