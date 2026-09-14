@@ -78,6 +78,14 @@ istalgan vaqt o'zgartirish mumkin.
   (masalan "Marketolog, Instagram uchun post yoz").
 - **Fayllar**: botlarga `.txt`, `.docx`, `.pdf` fayl yuborsangiz, ular
   fayl ichidagi matnni o'qib, shunga qarab javob beradi.
+- **Rasm va video**: istalgan botga rasm yoki video yuborib, "buni "
+  tahlil qil" yoki "shunga qarab post/ssenariy yoz" deb so'rasangiz,
+  bot AI vision orqali tasvirni "ko'rib", shunga qarab javob beradi.
+  (Video uchun hozircha faqat asosiy kadr tahlil qilinadi, to'liq
+  video emas.)
+- **Fayl yaratish**: "buni PDF/Word qilib ber" desangiz, bot haqiqiy
+  `.pdf` yoki `.docx` fayl generatsiya qilib, to'g'ridan-to'g'ri
+  Telegram orqali yuboradi.
 - **Ovozli xabarlar**: botlarga ovozli xabar yuborsangiz, ular uni
   avtomatik matnga o'girib (Whisper orqali), tushunib, matn holida
   javob qaytaradi.

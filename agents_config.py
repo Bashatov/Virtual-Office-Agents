@@ -51,6 +51,20 @@ DELEGATE_RULE = (
     "mobilograf, moliya."
 )
 
+FILE_CREATION_RULE = (
+    "\nFAYL YARATISH QOIDASI:\n"
+    "Agar foydalanuvchi sendan biror narsani PDF yoki Word (docx) fayl "
+    "qilib berishingni so'rasa (masalan 'PDF qilib yubor', 'word "
+    "faylga tushirib ber'), avval qisqa tayyorlik xabarini yoz, so'ng "
+    "javobing OXIRIDA quyidagi formatda to'liq matnni kiriting:\n"
+    "[CREATE_FILE:pdf] <Fayl sarlavhasi>\n<faylning to'liq matni, "
+    "kerakli joylarda qator ko'chirib>\n"
+    "Word fayl so'ralsa 'pdf' o'rniga 'docx' yoz. Fayl turi aytilmasa, "
+    "standart holatda 'pdf' tanla. Faylning matnini hech qachon "
+    "qisqartirma - foydalanuvchi so'ragan hamma narsa to'liq bo'lishi "
+    "kerak."
+)
+
 
 AGENTS = {
     "direktor": {
@@ -64,6 +78,7 @@ AGENTS = {
             "kerak bo'lsa mos bo'limga yoki xodimga topshiriq berish va "
             "umumiy strategiyani belgilash.\n\n"
             + PROFESSIONALISM_RULE + DELEGATE_RULE + HUMAN_INTERACTION_RULE
+            + FILE_CREATION_RULE
         ),
     },
     "marketolog": {
@@ -77,7 +92,7 @@ AGENTS = {
             "matnlari, kampaniya g'oyalari, sotuv matnlari (copywriting) "
             "yozish. Har doim: 1) maqsadli auditoriya, 2) asosiy taklif "
             "(offer), 3) chaqiruv (CTA) borligiga ishonch hosil qil.\n\n"
-            + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE
+            + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
         ),
     },
     "smm": {
@@ -89,7 +104,7 @@ AGENTS = {
             "Sen SMM (Social Media Marketing) menejerisan. Vazifang: "
             "Instagram/Telegram uchun kontent-reja tuzish, post matnlari "
             "yozish, hashtag va joylash vaqtini tavsiya qilish.\n\n"
-            + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE
+            + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
         ),
     },
     "dizayner": {
@@ -101,7 +116,7 @@ AGENTS = {
             "Sen grafik dizaynersan. Vazifang: post/banner uchun vizual "
             "g'oya, kompozitsiya, rang sxemasi va matn joylashuvini "
             "batafsil tasvirlab berish.\n\n"
-            + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE
+            + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
         ),
     },
     "mobilograf": {
@@ -113,7 +128,7 @@ AGENTS = {
             "Sen video-prodyuser va ssenariy yozuvchisan. Vazifang: qisqa "
             "reklama/kontent videolar uchun ssenariy (sahna-sahna), syomka "
             "rejasi va davomiyligini yozib berish.\n\n"
-            + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE
+            + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
         ),
     },
     "moliya": {
@@ -125,7 +140,7 @@ AGENTS = {
             "Sen moliyaviy analitiksan. Vazifang: reklama byudjetini "
             "hisoblash, xarajatlarni kuzatish va oddiy tilda hisobot "
             "berish. Raqamlarni aniq ber, taxminiy bo'lsa 'taxminan' deb "
-            "belgila.\n\n" + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE
+            "belgila.\n\n" + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
         ),
     },
 }

@@ -12,11 +12,15 @@ Bitta agent uchun to'liq ishchi mantiq:
     topic'da UMUMAN ishlamaydi (hatto chaqirilsa ham) - faqat Direktor
     istalgan topicda ishlay oladi.
 
-  - Matn, fayl (.txt/.docx/.pdf) va ovozli xabarlarni qabul qiladi.
+  - Matn, fayl (.txt/.docx/.pdf), rasm, video va ovozli xabarlarni
+    qabul qiladi va tushunadi (rasm/video - AI vision orqali tahlil
+    qilinadi).
   - Javobda [DELEGATE:agent_key] bo'lsa -> AI bo'limga vazifa yaratiladi.
   - Javobda [ADD_EMPLOYEE:key] bo'lsa -> yangi xodim MongoDB'ga saqlanadi.
   - Javobda [MESSAGE_HUMAN:employee_key] bo'lsa -> guruhda xodimga
     @username orqali mention qilib xabar yoziladi va javobi kutiladi.
+  - Javobda [CREATE_FILE:pdf yoki docx] bo'lsa -> haqiqiy fayl
+    generatsiya qilinib, Telegram orqali yuboriladi.
   - Guruhda kimdir yozganda: agar bu username'dan javob kutilayotgan
     bo'lsa, xabar avtomatik asl so'rovchiga (origin_agent boti orqali)
     forward qilinadi.
@@ -25,14 +29,15 @@ Bitta agent uchun to'liq ishchi mantiq:
 
 import re
 import os
+import io
 import asyncio
 import logging
-from telegram import Update
+from telegram import Update, InputFile
 from telegram.ext import Application, MessageHandler, ContextTypes, filters
 
 from agents_config import AGENTS, GROUP_CHAT_ID, build_system_prompt
 from topics_config import TOPIC_MAP
-from llm_client import generate_reply, transcribe_voice
+from llm_client import generate_reply, transcribe_voice, analyze_image
 import file_utils
 import db
 
@@ -42,6 +47,7 @@ DELEGATE_RE = re.compile(r"\[DELEGATE:(\w+)\]\s*(.+)", re.DOTALL)
 MESSAGE_HUMAN_RE = re.compile(r"\[MESSAGE_HUMAN:(\w+)\]\s*(.+)", re.DOTALL)
 ADD_EMPLOYEE_RE = re.compile(r"\[ADD_EMPLOYEE:(\w+)\]\s*(.+)", re.DOTALL)
 DELETE_EMPLOYEE_RE = re.compile(r"\[DELETE_EMPLOYEE:(\w+)\]")
+CREATE_FILE_RE = re.compile(r"\[CREATE_FILE:(pdf|docx)\]\s*(.+)", re.DOTALL)
 
 GROUP_TYPES = ("group", "supergroup")
 
@@ -155,6 +161,34 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                 visible_reply += f"\n\n🗑 Xodim ro'yxatdan o'chirildi: {emp_key}."
             else:
                 visible_reply += f"\n\n⚠️ '{emp_key}' nomli xodim topilmadi."
+
+        # b3) Fayl (PDF/Word) yaratish va yuborish
+        create_file_match = CREATE_FILE_RE.search(reply)
+        if create_file_match:
+            file_type = create_file_match.group(1).strip().lower()
+            body_raw = create_file_match.group(2).strip()
+            visible_reply = reply[: create_file_match.start()].strip()
+
+            parts = body_raw.split("\n", 1)
+            title = (parts[0].strip() or "Hujjat")[:60]
+            body_text = parts[1].strip() if len(parts) > 1 else ""
+
+            try:
+                if file_type == "docx":
+                    file_bytes = file_utils.create_docx(title, body_text)
+                    filename = f"{title}.docx"
+                else:
+                    file_bytes = file_utils.create_pdf(title, body_text)
+                    filename = f"{title}.pdf"
+
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=InputFile(io.BytesIO(file_bytes), filename=filename),
+                )
+                visible_reply += f"\n\n📎 Fayl tayyorlandi va yuborildi: {filename}"
+            except Exception as e:
+                logger.exception("Fayl yaratishda xatolik: %s", e)
+                visible_reply += "\n\n⚠️ Faylni yaratishda xatolik yuz berdi."
 
         # c) Xodimga guruhda @mention orqali xabar yuborish
         human_match = MESSAGE_HUMAN_RE.search(reply)
@@ -277,9 +311,79 @@ def build_worker(agent_key: str, bots: dict) -> Application:
         await update.message.reply_text(f"🎙 Eshitdim: \u201c{transcribed}\u201d")
         await process_user_text(update.effective_chat.id, transcribed, update, context)
 
+    # ---------- Rasmlar ----------
+
+    async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message or not update.message.photo:
+            return
+        if not await is_addressed(update, context):
+            return
+
+        await update.message.reply_text("🖼 Rasm qabul qilindi, tahlil qilyapman...")
+
+        photo = update.message.photo[-1]  # eng katta o'lchamdagisi
+        tg_file = await photo.get_file()
+        photo_bytes = bytes(await tg_file.download_as_bytearray())
+
+        description = analyze_image(
+            cfg["provider"], cfg["model"], photo_bytes,
+            "Bu rasmda nima ko'rinib turibdi? Batafsil va aniq tasvirlab "
+            "ber: obyektlar, muhit, ranglar, matn (agar bo'lsa), umumiy "
+            "kayfiyat va uslub.",
+        )
+        if not description:
+            description = "(Rasmni tahlil qilib bo'lmadi.)"
+
+        caption = update.message.caption or "(izoh yozilmagan)"
+        user_text = (
+            f"[Foydalanuvchi rasm yubordi]\n\n"
+            f"Rasm tavsifi (AI ko'rish orqali):\n{description}\n\n"
+            f"Foydalanuvchi izohi: {caption}"
+        )
+        await process_user_text(update.effective_chat.id, user_text, update, context)
+
+    # ---------- Videolar ----------
+
+    async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not update.message or not update.message.video:
+            return
+        if not await is_addressed(update, context):
+            return
+
+        await update.message.reply_text(
+            "🎬 Video qabul qilindi. Eslatma: hozircha videoning to'liq "
+            "davomida emas, faqat asosiy kadridan tahlil qilaman..."
+        )
+
+        video = update.message.video
+        description = ""
+        if video.thumbnail:
+            tg_file = await video.thumbnail.get_file()
+            thumb_bytes = bytes(await tg_file.download_as_bytearray())
+            description = analyze_image(
+                cfg["provider"], cfg["model"], thumb_bytes,
+                "Bu - video faylning asosiy kadri (thumbnail). Unda nima "
+                "ko'rinib turibdi? Batafsil tasvirlab ber.",
+            )
+        if not description:
+            description = "(Video kadrini tahlil qilib bo'lmadi.)"
+
+        caption = update.message.caption or "(izoh yozilmagan)"
+        duration = video.duration or 0
+        user_text = (
+            f"[Foydalanuvchi video yubordi, davomiyligi ~{duration} soniya]\n\n"
+            f"Videoning asosiy kadri tavsifi (AI ko'rish orqali):\n{description}\n\n"
+            f"Foydalanuvchi izohi: {caption}\n\n"
+            "(Eslatma: bu tahlil faqat videoning bitta asosiy kadriga "
+            "asoslangan, to'liq video emas.)"
+        )
+        await process_user_text(update.effective_chat.id, user_text, update, context)
+
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.VIDEO, handle_video))
     return app
 
 

@@ -6,6 +6,7 @@ matnga o'girish (OpenAI Whisper).
 
 import os
 import io
+import base64
 import logging
 from anthropic import Anthropic
 from openai import OpenAI
@@ -83,4 +84,54 @@ def transcribe_voice(file_bytes: bytes) -> str:
         return (resp.text or "").strip()
     except Exception as e:
         logger.exception("Ovozni matnga o'girishda xatolik: %s", e)
+        return ""
+
+
+def analyze_image(provider: str, model: str, image_bytes: bytes, prompt: str) -> str:
+    """
+    Rasm (yoki video kadri) baytlarini AI orqali tahlil qilib, matnli
+    tavsif qaytaradi. Claude va GPT-4o ikkalasi ham vision (ko'rish)
+    imkoniyatiga ega - agentning o'z provideri ishlatiladi.
+    """
+    try:
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        if provider == "claude":
+            client = _get_anthropic()
+            resp = client.messages.create(
+                model=model,
+                max_tokens=1000,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "source": {
+                            "type": "base64", "media_type": "image/jpeg", "data": b64,
+                        }},
+                        {"type": "text", "text": prompt},
+                    ],
+                }],
+            )
+            return "".join(
+                block.text for block in resp.content if block.type == "text"
+            ).strip()
+
+        else:  # gpt4o
+            client = _get_openai()
+            resp = client.chat.completions.create(
+                model=model,
+                max_tokens=1000,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {
+                            "url": f"data:image/jpeg;base64,{b64}",
+                        }},
+                    ],
+                }],
+            )
+            return resp.choices[0].message.content.strip()
+
+    except Exception as e:
+        logger.exception("Rasmni tahlil qilishda xatolik: %s", e)
         return ""
