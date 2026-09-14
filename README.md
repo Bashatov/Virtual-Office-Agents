@@ -84,6 +84,38 @@ istalgan vaqt o'zgartirish mumkin.
 - **Haqiqiy xodimga xabar**: Direktorga "operatorga ayt..." desangiz,
   u ro'yxatdagi xodimga to'g'ridan-to'g'ri Telegram xabar yuboradi va
   javobini kutib, kelgach sizga darhol yetkazadi.
+- **Topic'lar (mavzular)**: agar guruhingizda Telegram Topics
+  (Forum) yoqilgan bo'lsa va videodagidek har bir bo'lim uchun
+  alohida topic ochgan bo'lsangiz, `topics_config.py` orqali har
+  bir topicni tegishli botga bog'lab qo'yish mumkin — shunda o'sha
+  topicda yozilgan har qanday xabarga (@mention shart emas) faqat
+  o'sha bo'lim boti avtomatik javob beradi.
+
+## Topic'larni botlarga bog'lash (ixtiyoriy, lekin tavsiya etiladi)
+
+1. Guruh nomi ustiga bosib, sozlamalarga kiring, "Topics" (Mavzular)
+   funksiyasini yoqing.
+2. Har bir bo'lim uchun alohida topic yarating (masalan "Marketolog",
+   "SMM", "Moliya" va h.k.).
+3. Har bir topic ichida bitta test xabar yozing.
+4. Brauzerda oching: `https://api.telegram.org/bot<ISTALGAN_TOKEN>/getUpdates`
+   — javobda shu xabar uchun `"message_thread_id": <raqam>` ni
+   topasiz. Har bir topic uchun shu raqamni yozib boring.
+5. GitHub'da `topics_config.py` faylini oching, `TOPIC_MAP` ichiga
+   qo'shing:
+   ```python
+   TOPIC_MAP = {
+       12: "marketolog",
+       15: "smm",
+       18: "moliya",
+       21: "mobilograf",
+       24: "dizayner",
+       27: "direktor",
+   }
+   ```
+   (Raqamlar — sizning topic ID'laringiz, o'ng tomondagi nom esa
+   `agents_config.py`dagi agent kaliti bilan bir xil bo'lishi kerak.)
+6. Commit qiling — Railway avtomatik qayta deploy qiladi.
 
 ## Keyingi kuchaytirishlar (ixtiyoriy)
 

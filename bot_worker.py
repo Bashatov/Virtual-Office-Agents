@@ -25,6 +25,7 @@ from telegram.ext import Application, MessageHandler, ContextTypes, filters
 
 from agents_config import AGENTS, GROUP_CHAT_ID
 from employees_config import EMPLOYEES
+from topics_config import TOPIC_MAP
 from llm_client import generate_reply, transcribe_voice
 import file_utils
 import db
@@ -55,7 +56,13 @@ def build_worker(agent_key: str) -> Application:
         msg = update.message
         text = (msg.text or msg.caption or "").strip()
 
-        # 1) shu botning oldingi xabariga reply qilinganmi
+        # 1) shu bot O'ZINING topic'ida (kabinetida) yozilganmi -
+        #    bu yerda @mention shart emas, avtomatik javob beradi
+        thread_id = getattr(msg, "message_thread_id", None)
+        if thread_id is not None and TOPIC_MAP.get(thread_id) == agent_key:
+            return True
+
+        # 2) shu botning oldingi xabariga reply qilinganmi
         if (
             msg.reply_to_message
             and msg.reply_to_message.from_user
@@ -63,12 +70,12 @@ def build_worker(agent_key: str) -> Application:
         ):
             return True
 
-        # 2) @username orqali chaqirilganmi
+        # 3) @username orqali chaqirilganmi
         bot_username = (context.bot.username or "").lower()
         if bot_username and f"@{bot_username}" in text.lower():
             return True
 
-        # 3) bot nomi bilan boshlanganmi (masalan "Marketolog, ...")
+        # 4) bot nomi bilan boshlanganmi (masalan "Marketolog, ...")
         display = cfg["display_name"].lower()
         if text.lower().startswith(display):
             return True
@@ -206,10 +213,15 @@ def build_worker(agent_key: str) -> Application:
     return app
 
 
-async def task_checker_loop(agent_key: str, app: Application, interval_sec: int = 20):
-    """Fon rejimida: shu agentga berilgan yangi AI-vazifalarni tekshirib bajaradi."""
+async def task_checker_loop(agent_key: str, bots: dict, interval_sec: int = 20):
+    """
+    Fon rejimida: shu agentga berilgan yangi AI-vazifalarni tekshirib bajaradi.
+    Natija - vazifani KIM SO'RAGAN bo'lsa o'sha bo'lim (from_agent) boti
+    orqali, aynan so'ragan chatga (origin_chat_id) qaytariladi. Masalan:
+    foydalanuvchi Direktordan SMM'ga vazifa berdirsa, SMM bajargach,
+    natija Direktor boti orqali foydalanuvchiga qaytadi - guruhga emas.
+    """
     cfg = AGENTS[agent_key]
-    bot = app.bot
     while True:
         try:
             pending = db.get_pending_tasks(agent_key)
@@ -220,9 +232,10 @@ async def task_checker_loop(agent_key: str, app: Application, interval_sec: int 
                 )
                 db.mark_task_done(task["_id"], result)
 
-                target_chat = GROUP_CHAT_ID or task["origin_chat_id"]
+                origin_agent_key = task.get("from_agent", agent_key)
+                origin_bot = bots.get(origin_agent_key) or bots.get(agent_key)
                 text = f"✅ {cfg['display_name']} bajardi:\n\n{result}"
-                await bot.send_message(chat_id=target_chat, text=text)
+                await origin_bot.send_message(chat_id=task["origin_chat_id"], text=text)
         except Exception:
             logger.exception("task_checker_loop xatolik (%s)", agent_key)
 
