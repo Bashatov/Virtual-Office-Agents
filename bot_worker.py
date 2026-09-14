@@ -126,6 +126,10 @@ def build_worker(agent_key: str, bots: dict) -> Application:
 
     async def process_user_text(chat_id: int, user_text: str, update: Update,
                                  context: ContextTypes.DEFAULT_TYPE):
+        # So'rov qaysi topicdan kelgan bo'lsa, javob (jumladan fayl/rasm)
+        # ham o'sha topicga qaytishi uchun thread_id'ni saqlab qo'yamiz.
+        origin_thread_id = getattr(update.message, "message_thread_id", None)
+
         db.save_message(agent_key, chat_id, "user", user_text)
         history = db.get_history(agent_key, chat_id)
 
@@ -191,6 +195,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                 await context.bot.send_document(
                     chat_id=chat_id,
                     document=InputFile(io.BytesIO(file_bytes), filename=filename),
+                    message_thread_id=origin_thread_id,
                 )
                 visible_reply += f"\n\n📎 Fayl tayyorlandi va yuborildi: {filename}"
             except Exception as e:
@@ -299,6 +304,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                 await context.bot.send_photo(
                     chat_id=chat_id,
                     photo=InputFile(io.BytesIO(image_bytes), filename="rasm.png"),
+                    message_thread_id=origin_thread_id,
                 )
                 visible_reply += "\n\n🖼 Rasm tayyorlandi va yuborildi."
             else:
