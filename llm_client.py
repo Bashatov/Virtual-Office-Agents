@@ -150,10 +150,21 @@ def generate_image(prompt: str) -> bytes:
             size="1024x1024",
             quality="standard",
             n=1,
-            response_format="b64_json",
         )
-        b64 = resp.data[0].b64_json
-        return base64.b64decode(b64)
+        data = resp.data[0]
+
+        # OpenAI ba'zan b64_json, ba'zan faqat url qaytaradi - ikkalasini
+        # ham qo'llab-quvvatlaymiz.
+        if getattr(data, "b64_json", None):
+            return base64.b64decode(data.b64_json)
+
+        if getattr(data, "url", None):
+            import httpx
+            r = httpx.get(data.url, timeout=30)
+            r.raise_for_status()
+            return r.content
+
+        return b""
     except Exception as e:
         logger.exception("Rasm generatsiya qilishda xatolik: %s", e)
         return b""
