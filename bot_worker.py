@@ -39,7 +39,7 @@ from telegram.ext import (
 
 from agents_config import AGENTS, GROUP_CHAT_ID, build_system_prompt
 from topics_config import TOPIC_MAP
-from llm_client import generate_reply, transcribe_voice, analyze_image
+from llm_client import generate_reply, transcribe_voice, analyze_image, generate_image
 import file_utils
 import db
 
@@ -53,6 +53,8 @@ CREATE_FILE_RE = re.compile(r"\[CREATE_FILE:(pdf|docx)\]\s*(.+)", re.DOTALL)
 SEND_FILE_TO_HUMAN_RE = re.compile(
     r"\[SEND_FILE_TO_HUMAN:(\w+):(pdf|docx)\]\s*(.+)", re.DOTALL
 )
+CREATE_IMAGE_RE = re.compile(r"\[CREATE_IMAGE\]\s*(.+)", re.DOTALL)
+SEND_IMAGE_TO_HUMAN_RE = re.compile(r"\[SEND_IMAGE_TO_HUMAN:(\w+)\]\s*(.+)", re.DOTALL)
 
 GROUP_TYPES = ("group", "supergroup")
 
@@ -280,6 +282,63 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                 except Exception as e:
                     logger.exception("Xodimga fayl yuborishda xatolik: %s", e)
                     visible_reply += "\n\n⚠️ Faylni yuborishda xatolik yuz berdi."
+            else:
+                visible_reply += (
+                    f"\n\n⚠️ '{employee_key}' xodimi topilmadi yoki "
+                    "GROUP_CHAT_ID sozlanmagan."
+                )
+
+        # d) Haqiqiy rasm generatsiya qilish (foydalanuvchining o'ziga)
+        create_image_match = CREATE_IMAGE_RE.search(reply)
+        if create_image_match:
+            image_prompt = create_image_match.group(1).strip()
+            visible_reply = reply[: create_image_match.start()].strip()
+
+            image_bytes = generate_image(image_prompt)
+            if image_bytes:
+                await context.bot.send_photo(
+                    chat_id=chat_id,
+                    photo=InputFile(io.BytesIO(image_bytes), filename="rasm.png"),
+                )
+                visible_reply += "\n\n🖼 Rasm tayyorlandi va yuborildi."
+            else:
+                visible_reply += "\n\n⚠️ Rasmni generatsiya qilishda xatolik yuz berdi."
+
+        # d2) Xodimga guruhda rasm yuborish
+        send_image_match = SEND_IMAGE_TO_HUMAN_RE.search(reply)
+        if send_image_match:
+            employee_key = send_image_match.group(1).strip().lower()
+            image_prompt = send_image_match.group(2).strip()
+            visible_reply = reply[: send_image_match.start()].strip()
+
+            employee = db.get_employee(employee_key)
+            if employee and employee.get("username") and employee["username"] != "-" and GROUP_CHAT_ID:
+                image_bytes = generate_image(image_prompt)
+                if image_bytes:
+                    target_thread = REVERSE_TOPIC_MAP.get(employee_key)
+                    if target_thread is None:
+                        target_thread = REVERSE_TOPIC_MAP.get(agent_key)
+
+                    send_kwargs = {
+                        "chat_id": int(GROUP_CHAT_ID),
+                        "photo": InputFile(io.BytesIO(image_bytes), filename="rasm.png"),
+                        "caption": (
+                            f"🖼 @{employee['username']}, {cfg['display_name']}dan rasm:"
+                        ),
+                    }
+                    if target_thread is not None:
+                        send_kwargs["message_thread_id"] = target_thread
+                    await context.bot.send_photo(**send_kwargs)
+
+                    db.create_human_task(
+                        employee_key, employee["username"], int(GROUP_CHAT_ID),
+                        target_thread, "[Rasm yuborildi]", chat_id, agent_key,
+                    )
+                    visible_reply += (
+                        f"\n\n🖼 Rasm guruhda @{employee['username']}ga yuborildi."
+                    )
+                else:
+                    visible_reply += "\n\n⚠️ Rasmni generatsiya qilishda xatolik yuz berdi."
             else:
                 visible_reply += (
                     f"\n\n⚠️ '{employee_key}' xodimi topilmadi yoki "

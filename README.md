@@ -87,6 +87,10 @@ istalgan vaqt o'zgartirish mumkin.
   `.pdf` yoki `.docx` fayl generatsiya qilib, to'g'ridan-to'g'ri
   Telegram orqali yuboradi. "Buni operatorga PDF qilib yubor"
   desangiz esa, fayl guruhda o'sha xodimga @mention qilib yuboriladi.
+- **Rasm yaratish**: Dizaynerga (yoki istalgan botga) "rasm chizib
+  ber", "banner tayyorla" desangiz, DALL-E 3 orqali haqiqiy rasm
+  generatsiya qilinib yuboriladi. Xodimga yuborish ham xuddi fayl
+  kabi ishlaydi ("bu rasmni operatorga yubor").
 - **Ovozli xabarlar**: botlarga ovozli xabar yuborsangiz, ular uni
   avtomatik matnga o'girib (Whisper orqali), tushunib, matn holida
   javob qaytaradi.

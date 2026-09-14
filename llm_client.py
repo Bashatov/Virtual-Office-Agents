@@ -135,3 +135,25 @@ def analyze_image(provider: str, model: str, image_bytes: bytes, prompt: str) ->
     except Exception as e:
         logger.exception("Rasmni tahlil qilishda xatolik: %s", e)
         return ""
+
+
+def generate_image(prompt: str) -> bytes:
+    """
+    Berilgan tavsif (prompt) asosida DALL-E 3 orqali haqiqiy rasm
+    generatsiya qiladi. Xato bo'lsa bo'sh bytes qaytaradi.
+    """
+    try:
+        client = _get_openai()
+        resp = client.images.generate(
+            model="dall-e-3",
+            prompt=prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+            response_format="b64_json",
+        )
+        b64 = resp.data[0].b64_json
+        return base64.b64decode(b64)
+    except Exception as e:
+        logger.exception("Rasm generatsiya qilishda xatolik: %s", e)
+        return b""

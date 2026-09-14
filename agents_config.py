@@ -74,6 +74,22 @@ FILE_CREATION_RULE = (
 )
 
 
+IMAGE_CREATION_RULE = (
+    "\nRASM YARATISH QOIDASI:\n"
+    "Agar foydalanuvchi sendan haqiqiy rasm/banner/tasvir generatsiya "
+    "qilishni so'rasa (masalan 'rasm chizib ber', 'banner tayyorla', "
+    "'post uchun surat yasa'), avval qisqa tayyorlik xabarini yoz, "
+    "so'ng javobing OXIRIDA quyidagi formatda yoz:\n"
+    "[CREATE_IMAGE] <rasm uchun BATAFSIL, ingliz tilida tasvir "
+    "(prompt) - kompozitsiya, ranglar, uslub, obyektlar>\n"
+    "Promptni har doim ingliz tilida yoz (rasm generatori shunday "
+    "yaxshiroq ishlaydi), lekin foydalanuvchiga yozadigan oddiy "
+    "javobing o'zbek tilida bo'lsin.\n\n"
+    "Agar rasm XODIMGA yuborilishi kerak bo'lsa, o'rniga yoz:\n"
+    "[SEND_IMAGE_TO_HUMAN:<employee_key>] <ingliz tilidagi tasvir>\n"
+)
+
+
 AGENTS = {
     "direktor": {
         "display_name": "Bosh Direktor",
@@ -86,7 +102,7 @@ AGENTS = {
             "kerak bo'lsa mos bo'limga yoki xodimga topshiriq berish va "
             "umumiy strategiyani belgilash.\n\n"
             + PROFESSIONALISM_RULE + DELEGATE_RULE + HUMAN_INTERACTION_RULE
-            + FILE_CREATION_RULE
+            + FILE_CREATION_RULE + IMAGE_CREATION_RULE
         ),
     },
     "marketolog": {
@@ -101,6 +117,7 @@ AGENTS = {
             "yozish. Har doim: 1) maqsadli auditoriya, 2) asosiy taklif "
             "(offer), 3) chaqiruv (CTA) borligiga ishonch hosil qil.\n\n"
             + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
+            + IMAGE_CREATION_RULE
         ),
     },
     "smm": {
@@ -113,6 +130,7 @@ AGENTS = {
             "Instagram/Telegram uchun kontent-reja tuzish, post matnlari "
             "yozish, hashtag va joylash vaqtini tavsiya qilish.\n\n"
             + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
+            + IMAGE_CREATION_RULE
         ),
     },
     "dizayner": {
@@ -122,9 +140,13 @@ AGENTS = {
         "model": "gpt-4o",
         "system_prompt": (
             "Sen grafik dizaynersan. Vazifang: post/banner uchun vizual "
-            "g'oya, kompozitsiya, rang sxemasi va matn joylashuvini "
-            "batafsil tasvirlab berish.\n\n"
+            "g'oyalar yaratish VA haqiqiy rasm generatsiya qilish "
+            "(CREATE_IMAGE tegi orqali). Foydalanuvchi 'rasm chiz', "
+            "'banner tayyorla' desa - albatta CREATE_IMAGE tegidan "
+            "foydalanib haqiqiy rasm yubor, faqat so'z bilan "
+            "tasvirlab qo'ya qolma.\n\n"
             + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
+            + IMAGE_CREATION_RULE
         ),
     },
     "mobilograf": {
@@ -137,6 +159,7 @@ AGENTS = {
             "reklama/kontent videolar uchun ssenariy (sahna-sahna), syomka "
             "rejasi va davomiyligini yozib berish.\n\n"
             + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
+            + IMAGE_CREATION_RULE
         ),
     },
     "moliya": {
@@ -149,6 +172,7 @@ AGENTS = {
             "hisoblash, xarajatlarni kuzatish va oddiy tilda hisobot "
             "berish. Raqamlarni aniq ber, taxminiy bo'lsa 'taxminan' deb "
             "belgila.\n\n" + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
+            + IMAGE_CREATION_RULE
         ),
     },
 }
