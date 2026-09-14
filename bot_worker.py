@@ -8,6 +8,9 @@ Bitta agent uchun to'liq ishchi mantiq:
       2) @botusername orqali chaqirilsa
       3) shu botning oldingi xabariga "reply" qilingan bo'lsa
       4) xabar bot nomi bilan boshlansa (masalan "Marketolog, ...")
+    ISTISNO: Direktordan boshqa har bir bot, BOSHQA bo'limga tegishli
+    topic'da UMUMAN ishlamaydi (hatto chaqirilsa ham) - faqat Direktor
+    istalgan topicda ishlay oladi.
 
   - Matn, fayl (.txt/.docx/.pdf) va ovozli xabarlarni qabul qiladi.
   - Javobda [DELEGATE:agent_key] bo'lsa -> AI bo'limga vazifa yaratiladi.
@@ -73,10 +76,17 @@ def build_worker(agent_key: str, bots: dict) -> Application:
 
         msg = update.message
         text = (msg.text or msg.caption or "").strip()
+        thread_id = getattr(msg, "message_thread_id", None)
+        topic_owner = TOPIC_MAP.get(thread_id) if thread_id is not None else None
+
+        # ISTISNO: Direktordan boshqa har bir bot, BOSHQA bo'limga tegishli
+        # topic'da UMUMAN ishlamaydi (hatto chaqirilsa ham). Direktor esa
+        # istalgan topicda ishlashi mumkin.
+        if agent_key != "direktor" and topic_owner is not None and topic_owner != agent_key:
+            return False
 
         # 1) shu bot O'ZINING topic'ida yozilganmi - @mention shart emas
-        thread_id = getattr(msg, "message_thread_id", None)
-        if thread_id is not None and TOPIC_MAP.get(thread_id) == agent_key:
+        if thread_id is not None and topic_owner == agent_key:
             return True
 
         # 2) shu botning oldingi xabariga reply qilinganmi
