@@ -21,10 +21,5 @@ oddiy guruh xabari sifatida ishlaydi (faqat @mention orqali chaqiriladi).
 """
 
 TOPIC_MAP = {
-   -1003942111149: "mobilograf",
-   -1003942111149: "dizayner",
-   -1003942111149: "marketolog",
-   -1003942111149: "moliya",
-   -1003942111149: "smm",
-   -1003942111149: "direktor"
+   
 }
