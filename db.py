@@ -11,7 +11,7 @@ MongoDB Atlas bilan ishlash. To'plamlar (collection):
 
 import os
 import datetime
-from pymongo import MongoClient, ReturnDocument
+from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
 _client = None
@@ -154,6 +154,18 @@ def create_human_task(employee_key: str, employee_username: str,
                        group_chat_id: int, thread_id, message_text: str,
                        origin_chat_id: int, origin_agent: str):
     db = get_db()
+    # MUHIM: shu xodimga tegishli, hali javobsiz qolgan ESKI so'rovlarni
+    # "eskirgan" deb belgilaymiz - shunda xodim bittagina javob yozganda,
+    # eski-eski so'rovlar hammasi birdan "qayta tirilib" ketmaydi va
+    # bir nechta bot bir vaqtda tasdiq yubormaydi.
+    db.human_tasks.update_many(
+        {
+            "group_chat_id": group_chat_id,
+            "employee_username": employee_username,
+            "status": "waiting_reply",
+        },
+        {"$set": {"status": "superseded"}},
+    )
     db.human_tasks.insert_one(
         {
             "employee_key": employee_key,
@@ -172,22 +184,44 @@ def create_human_task(employee_key: str, employee_username: str,
 def claim_human_task_by_username(group_chat_id: int, username: str, reply_text: str):
     """
     Guruhda kimdir yozganda chaqiriladi: agar shu username'dan javob
-    kutilayotgan vazifa bo'lsa, uni ATOMAR ravishda "band qiladi" -
-    shu bilan 6 ta bot bir xabarni 6 marta forward qilib yubormaydi
-    (faqat birinchi ulgurgan bot vazifani "yutib oladi").
+    kutilayotgan vazifa(lar) bo'lsa, ULARNING HAMMASINI bir zumda
+    ATOMAR ravishda "band qiladi" (update_many). Shu tufayli, agar
+    bir nechta bot bir vaqtda shu funksiyani chaqirsa - FAQAT BITTASI
+    (birinchi ulgurgani) muvaffaqiyatli bo'ladi, qolganlari darhol
+    "hech narsa yo'q" javobini oladi (bitta xabarga bir nechta bot
+    bir vaqtda tasdiq yuborib yubormasligi uchun).
     """
     db = get_db()
-    return db.human_tasks.find_one_and_update(
+    result = db.human_tasks.update_many(
         {
             "group_chat_id": group_chat_id,
             "employee_username": username,
             "status": "waiting_reply",
         },
         {"$set": {
-            "status": "replied",
+            "status": "_claiming",
             "reply_text": reply_text,
             "replied_at": datetime.datetime.utcnow(),
         }},
-        sort=[("created_at", -1)],
-        return_document=ReturnDocument.AFTER,
     )
+    if result.modified_count == 0:
+        return None  # hech qanday kutilayotgan so'rov topilmadi
+
+    docs = list(db.human_tasks.find(
+        {
+            "group_chat_id": group_chat_id,
+            "employee_username": username,
+            "status": "_claiming",
+        }
+    ).sort("created_at", -1))
+
+    primary = docs[0]
+    db.human_tasks.update_one(
+        {"_id": primary["_id"]}, {"$set": {"status": "replied"}}
+    )
+    other_ids = [d["_id"] for d in docs[1:]]
+    if other_ids:
+        db.human_tasks.update_many(
+            {"_id": {"$in": other_ids}}, {"$set": {"status": "superseded"}}
+        )
+    return primary
