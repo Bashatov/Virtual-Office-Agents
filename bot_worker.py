@@ -760,6 +760,25 @@ def build_worker(agent_key: str, bots: dict) -> Application:
         chat_id = update.effective_chat.id
 
         if agent_key == "mobilograf":
+            # Telegram Bot API cheklovi: botlar faylni faqat 20 MB
+            # gacha yuklab olishi mumkin. Avvaldan tekshirib, foydasiz
+            # urinishning oldini olamiz va foydalanuvchiga aniq
+            # tushuntiramiz.
+            MAX_BOT_API_FILE_MB = 20
+            size_mb = (video.file_size or 0) / (1024 * 1024)
+            if size_mb > MAX_BOT_API_FILE_MB:
+                await update.message.reply_text(
+                    f"⚠️ Bu video juda katta ({size_mb:.0f} MB). Telegram "
+                    f"Bot API orqali botlar faqat {MAX_BOT_API_FILE_MB} MB "
+                    "gacha bo'lgan fayllarni qabul qila oladi - bu "
+                    "Telegramning o'z cheklovi, tuzatib bo'lmaydi.\n\n"
+                    "Iltimos: 1) videoni YouTube'ga joylab, havolasini "
+                    "yuboring, YOKI 2) videoni qisqartirib/siqib, "
+                    f"{MAX_BOT_API_FILE_MB} MB dan kichik holda qayta "
+                    "yuboring."
+                )
+                return
+
             # Mobilograf uchun: to'liq videoni yuklab, keyinchalik
             # "reel yarat" so'ralganda ishlatish uchun saqlab qo'yamiz.
             await update.message.reply_text(
@@ -770,8 +789,18 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             os.makedirs(dest_dir, exist_ok=True)
             local_path = os.path.join(dest_dir, "source.mp4")
 
-            tg_file = await video.get_file()
-            await tg_file.download_to_drive(local_path)
+            try:
+                tg_file = await video.get_file()
+                await tg_file.download_to_drive(local_path)
+            except Exception as e:
+                logger.exception("Video yuklab olishda xatolik: %s", e)
+                await update.message.reply_text(
+                    "⚠️ Videoni yuklab bo'lmadi (juda katta yoki tarmoq "
+                    "xatosi). Iltimos, YouTube havolasi orqali yuboring "
+                    "yoki kichikroq video bilan qayta urinib ko'ring."
+                )
+                return
+
             db.save_last_video(
                 agent_key, chat_id, local_path,
                 update.message.caption or "Yuborilgan video",
@@ -794,13 +823,16 @@ def build_worker(agent_key: str, bots: dict) -> Application:
 
         description = ""
         if video.thumbnail:
-            tg_file = await video.thumbnail.get_file()
-            thumb_bytes = bytes(await tg_file.download_as_bytearray())
-            description = analyze_image(
-                cfg["provider"], cfg["model"], thumb_bytes,
-                "Bu - video faylning asosiy kadri (thumbnail). Unda nima "
-                "ko'rinib turibdi? Batafsil tasvirlab ber.",
-            )
+            try:
+                tg_file = await video.thumbnail.get_file()
+                thumb_bytes = bytes(await tg_file.download_as_bytearray())
+                description = analyze_image(
+                    cfg["provider"], cfg["model"], thumb_bytes,
+                    "Bu - video faylning asosiy kadri (thumbnail). Unda nima "
+                    "ko'rinib turibdi? Batafsil tasvirlab ber.",
+                )
+            except Exception as e:
+                logger.exception("Video thumbnail tahlilida xatolik: %s", e)
         if not description:
             description = "(Video kadrini tahlil qilib bo'lmadi.)"
 
