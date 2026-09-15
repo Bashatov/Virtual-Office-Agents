@@ -75,7 +75,12 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
 
     ydl_opts = {
         "outtmpl": os.path.join(dest_dir, "source.%(ext)s"),
-        "format": "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best",
+        # MUHIM: qattiq "faqat mp4/m4a" talabini qo'ymaymiz - ba'zi
+        # klientlar (masalan 'android') uchun YouTube boshqacha
+        # (masalan webm) formatlarni qaytarishi mumkin. merge_output_format
+        # baribir yakuniy faylni mp4'ga o'giradi, shuning uchun bu yerda
+        # imkon qadar KENG (moslashuvchan) tanlov qoldiramiz.
+        "format": "bv*[height<=1080]+ba/b[height<=1080]/best",
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,
