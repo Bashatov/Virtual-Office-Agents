@@ -56,23 +56,53 @@ import db
 
 logger = logging.getLogger(__name__)
 
-DELEGATE_RE = re.compile(r"\[DELEGATE:(\w+)\]\s*(.+)", re.DOTALL)
-MESSAGE_HUMAN_RE = re.compile(r"\[MESSAGE_HUMAN:(\w+)\]\s*(.+)", re.DOTALL)
-ADD_EMPLOYEE_RE = re.compile(r"\[ADD_EMPLOYEE:(\w+)\]\s*(.+)", re.DOTALL)
-DELETE_EMPLOYEE_RE = re.compile(r"\[DELETE_EMPLOYEE:(\w+)\]")
-CREATE_FILE_RE = re.compile(r"\[CREATE_FILE:(pdf|docx)\]\s*(.+)", re.DOTALL)
-SEND_FILE_TO_HUMAN_RE = re.compile(
-    r"\[SEND_FILE_TO_HUMAN:(\w+):(pdf|docx)\]\s*(.+)", re.DOTALL
+# MUHIM: agentning javobida bir nechta teg ketma-ket kelib qolishi
+# mumkin (masalan bir necha SCHEDULE_REMINDER). Oddiy "(.+)" (ochko'z)
+# naqsh BUTUN qolgan matnni (keyingi teglarni ham, foydalanuvchiga
+# mo'ljallangan xulosa gapni ham) bitta tegning "matni" deb yutib
+# yuborardi. Shuning uchun har bir teg matni FAQAT keyingi teg
+# boshlanishigacha (yoki qator oxirigacha) o'qiladi - "lookahead" orqali.
+_NEXT_TAG_BOUNDARY = (
+    r"(?=\n\[(?:DELEGATE|MESSAGE_HUMAN|ADD_EMPLOYEE|DELETE_EMPLOYEE|"
+    r"CREATE_FILE|SEND_FILE_TO_HUMAN|CREATE_IMAGE|SEND_IMAGE_TO_HUMAN|"
+    r"EDIT_IMAGE|SCHEDULE_REMINDER|DOWNLOAD_YOUTUBE|CREATE_REEL)\b|\Z)"
 )
-CREATE_IMAGE_RE = re.compile(r"\[CREATE_IMAGE\]\s*(.+)", re.DOTALL)
-SEND_IMAGE_TO_HUMAN_RE = re.compile(r"\[SEND_IMAGE_TO_HUMAN:(\w+)\]\s*(.+)", re.DOTALL)
-EDIT_IMAGE_RE = re.compile(r"\[EDIT_IMAGE\]\s*(.+)", re.DOTALL)
+
+DELEGATE_RE = re.compile(
+    r"\[DELEGATE:(\w+)\]\s*(.+?)" + _NEXT_TAG_BOUNDARY, re.DOTALL
+)
+MESSAGE_HUMAN_RE = re.compile(
+    r"\[MESSAGE_HUMAN:(\w+)\]\s*(.+?)" + _NEXT_TAG_BOUNDARY, re.DOTALL
+)
+ADD_EMPLOYEE_RE = re.compile(
+    r"\[ADD_EMPLOYEE:(\w+)\]\s*(.+?)" + _NEXT_TAG_BOUNDARY, re.DOTALL
+)
+DELETE_EMPLOYEE_RE = re.compile(r"\[DELETE_EMPLOYEE:(\w+)\]")
+CREATE_FILE_RE = re.compile(
+    r"\[CREATE_FILE:(pdf|docx)\]\s*(.+?)" + _NEXT_TAG_BOUNDARY, re.DOTALL
+)
+SEND_FILE_TO_HUMAN_RE = re.compile(
+    r"\[SEND_FILE_TO_HUMAN:(\w+):(pdf|docx)\]\s*(.+?)" + _NEXT_TAG_BOUNDARY,
+    re.DOTALL,
+)
+CREATE_IMAGE_RE = re.compile(
+    r"\[CREATE_IMAGE\]\s*(.+?)" + _NEXT_TAG_BOUNDARY, re.DOTALL
+)
+SEND_IMAGE_TO_HUMAN_RE = re.compile(
+    r"\[SEND_IMAGE_TO_HUMAN:(\w+)\]\s*(.+?)" + _NEXT_TAG_BOUNDARY, re.DOTALL
+)
+EDIT_IMAGE_RE = re.compile(
+    r"\[EDIT_IMAGE\]\s*(.+?)" + _NEXT_TAG_BOUNDARY, re.DOTALL
+)
 SCHEDULE_REMINDER_RE = re.compile(
-    r"\[SCHEDULE_REMINDER:(\w+):(\w+):(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]\s*(.+)",
+    r"\[SCHEDULE_REMINDER:(\w+):(\w+):(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]\s*(.+?)"
+    + _NEXT_TAG_BOUNDARY,
     re.DOTALL,
 )
 DOWNLOAD_YOUTUBE_RE = re.compile(r"\[DOWNLOAD_YOUTUBE\]\s*(\S+)")
-CREATE_REEL_RE = re.compile(r"\[CREATE_REEL\]\s*(.+)", re.DOTALL)
+CREATE_REEL_RE = re.compile(
+    r"\[CREATE_REEL\]\s*(.+?)" + _NEXT_TAG_BOUNDARY, re.DOTALL
+)
 
 GROUP_TYPES = ("group", "supergroup")
 
@@ -476,8 +506,8 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     )
                     target_display = AGENTS[target_agent]["display_name"]
                     visible_reply += (
-                        f"\n\n⏰ Eslatma rejalashtirildi: {datetime_str} "
-                        f"(Toshkent vaqti) - {target_display} bajaradi. "
+                        f"\n\n⏰ Eslatma rejalashtirildi: {datetime_str} - "
+                        f"{target_display} bajaradi. "
                         "Natijasini sizga xabar qilaman."
                     )
                 except Exception as e:
