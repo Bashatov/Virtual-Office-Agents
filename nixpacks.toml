@@ -1,2 +1,2 @@
 [phases.setup]
-nixPkgs = ["ffmpeg", "dejavu_fonts", "nodejs_20", "yarn", "git"]
+nixPkgs = ["ffmpeg", "dejavu_fonts"]
