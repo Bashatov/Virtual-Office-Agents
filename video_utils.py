@@ -165,6 +165,28 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
     # himoya) devorini yengishga yordam beradi.
     pot_url = os.getenv("POT_PROVIDER_URL", "").strip()
 
+    # MUHIM DIAGNOSTIKA: shu manzilga chindan ulanib bo'ladimi - buni
+    # HAR SAFAR tekshirib, logga aniq yozib qo'yamiz. Shu orqali
+    # "sozlama noto'g'ri/server ishlamayapti" bilan "PoToken baribir
+    # yordam bermayapti" holatlarini bir-biridan ajratamiz.
+    if pot_url:
+        try:
+            import urllib.request
+            req = urllib.request.Request(pot_url, method="GET")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                logger.info(
+                    "✅ PoToken serveriga ulanish OK (%s) - javob kodi: %s",
+                    pot_url, resp.status,
+                )
+        except Exception as e:
+            logger.error(
+                "❌ PoToken serveriga ULANIB BO'LMADI (%s): %s. "
+                "Bu POT_PROVIDER_URL noto'g'ri yoki bgutil-provider "
+                "xizmati ishlamayotganini bildiradi - PoToken YORDAM "
+                "BERMAYDI, faqat oddiy strategiyalar sinaladi.",
+                pot_url, e,
+            )
+
     def _extractor_args(youtube_args: dict) -> dict:
         args = {"youtube": youtube_args}
         if pot_url:
