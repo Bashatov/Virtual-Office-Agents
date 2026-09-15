@@ -632,3 +632,10 @@ async def build_highlight_reel(src: str, plan: dict, dest_dir: str) -> str:
 def cleanup(chat_key: str):
     dest_dir = os.path.join(MEDIA_DIR, chat_key)
     shutil.rmtree(dest_dir, ignore_errors=True)
+
+
+def cleanup_dir(dir_path: str):
+    """Berilgan papkani to'g'ridan-to'g'ri o'chiradi (chat_key orqali
+    emas) - bir nechta video/urinish bir xil papkani bo'lishib olib,
+    biri ikkinchisini tasodifan o'chirib yubormasligi uchun."""
+    shutil.rmtree(dir_path, ignore_errors=True)

@@ -35,6 +35,7 @@ Bitta agent uchun to'liq ishchi mantiq:
 import re
 import os
 import io
+import uuid
 import asyncio
 import logging
 import datetime
@@ -522,7 +523,10 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             youtube_url = yt_match.group(1).strip()
             visible_reply = reply[: yt_match.start()].strip()
 
-            chat_key = f"{agent_key}_{chat_id}"
+            # MUHIM: har bir yuklash uchun NOYOB papka (chat_key + tasodifiy
+            # qism) - shunda bir nechta video/urinish bir-birining papkasini
+            # tasodifan "tozalab" (o'chirib) yubormaydi.
+            chat_key = f"{agent_key}_{chat_id}_{uuid.uuid4().hex[:8]}"
             result = await video_utils.download_youtube(youtube_url, chat_key)
             if result.get("error"):
                 err = result["error"]
@@ -570,7 +574,11 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                 )
                 try:
                     src_path = last_video["local_path"]
-                    chat_key = f"{agent_key}_{chat_id}"
+                    # MUHIM: tozalashda ANIQ shu videoning o'z papkasini
+                    # ishlatamiz (chat_key orqali qayta hisoblamaymiz) -
+                    # aks holda boshqa video/urinishning papkasini
+                    # tasodifan o'chirib yuborish xavfi bor edi.
+                    src_dir = os.path.dirname(src_path)
                     logger.info("[REEL] 1/6: video ma'lumotini olyapman...")
                     info = video_utils.get_video_info(src_path)
                     duration = info.get("duration", 30)
@@ -665,7 +673,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                         f"Format: {plan['format']} | Uslub: {plan['style']}\n"
                         f"Ichidagi lahzalar:\n{segments_list}"
                     )
-                    video_utils.cleanup(chat_key)
+                    video_utils.cleanup_dir(src_dir)
                 except asyncio.TimeoutError:
                     logger.error("[REEL] VAQT-LIMITIDAN OSHDI (asyncio.wait_for)")
                     visible_reply += (
@@ -734,7 +742,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                         "🎬 YouTube havolasi aniqlandi, yuklab olishga "
                         "harakat qilyapman..."
                     )
-                    chat_key = f"{agent_key}_{chat_id}"
+                    chat_key = f"{agent_key}_{chat_id}_{uuid.uuid4().hex[:8]}"
                     result = await video_utils.download_youtube(url, chat_key)
                     if "error" in result:
                         user_text += (
@@ -888,7 +896,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             await update.message.reply_text(
                 "🎬 Video qabul qilindi va yuklanmoqda..."
             )
-            chat_key = f"{agent_key}_{chat_id}"
+            chat_key = f"{agent_key}_{chat_id}_{uuid.uuid4().hex[:8]}"
             dest_dir = os.path.join(video_utils.MEDIA_DIR, chat_key)
             os.makedirs(dest_dir, exist_ok=True)
             local_path = os.path.join(dest_dir, "source.mp4")
