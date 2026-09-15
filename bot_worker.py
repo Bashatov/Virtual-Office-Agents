@@ -571,13 +571,20 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                 try:
                     src_path = last_video["local_path"]
                     chat_key = f"{agent_key}_{chat_id}"
+                    logger.info("[REEL] 1/6: video ma'lumotini olyapman...")
                     info = video_utils.get_video_info(src_path)
                     duration = info.get("duration", 30)
+                    logger.info("[REEL] 1/6 OK: davomiyligi=%s", duration)
 
+                    logger.info("[REEL] 2/6: nomzod kadrlarni chiqaryapman...")
                     frames = await video_utils.extract_candidate_frames(
                         src_path, os.path.dirname(src_path), count=8
                     )
+                    logger.info("[REEL] 2/6 OK: %d ta kadr", len(frames))
+
+                    logger.info("[REEL] 3/6: kontakt-sheet yasayapman...")
                     sheet_bytes = video_utils.build_contact_sheet(frames)
+                    logger.info("[REEL] 3/6 OK: %d bayt", len(sheet_bytes))
 
                     vision_prompt = (
                         "Bu - videodan olingan kadrlar to'plami (chap "
@@ -608,15 +615,25 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                         "MM:SS | davomiylik_soniya | #RRGGBB | Sarlavha\n"
                         "(kerakli sondagi shunday qatorlar, 2-6 ta)"
                     )
-                    vision_response = await asyncio.to_thread(
-                        analyze_image, cfg["provider"], cfg["model"],
-                        sheet_bytes, vision_prompt,
+                    logger.info("[REEL] 4/6: AI vision so'rovi yuborilmoqda...")
+                    vision_response = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            analyze_image, cfg["provider"], cfg["model"],
+                            sheet_bytes, vision_prompt,
+                        ),
+                        timeout=100,
                     )
+                    logger.info("[REEL] 4/6 OK: javob uzunligi=%d", len(vision_response or ""))
                     plan = video_utils.parse_reel_plan(vision_response, duration)
+                    logger.info("[REEL] 5/6: reja tuzildi: %s", plan)
 
-                    output_path = await video_utils.build_highlight_reel(
-                        src_path, plan, os.path.dirname(src_path),
+                    output_path = await asyncio.wait_for(
+                        video_utils.build_highlight_reel(
+                            src_path, plan, os.path.dirname(src_path),
+                        ),
+                        timeout=180,
                     )
+                    logger.info("[REEL] 6/6 OK: video tayyor: %s", output_path)
 
                     await _send_with_retry(
                         context.bot.send_video,
@@ -625,6 +642,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                         message_thread_id=origin_thread_id,
                         caption=f"🎬 {plan['title']}",
                     )
+                    logger.info("[REEL] Yuborildi!")
                     segments_list = "\n".join(
                         f"{i}. {s['caption']} ({s['duration']:.0f}s)"
                         for i, s in enumerate(plan["segments"], 1)
@@ -635,6 +653,12 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                         f"Ichidagi lahzalar:\n{segments_list}"
                     )
                     video_utils.cleanup(chat_key)
+                except asyncio.TimeoutError:
+                    logger.error("[REEL] VAQT-LIMITIDAN OSHDI (asyncio.wait_for)")
+                    visible_reply += (
+                        "\n\n⚠️ Jarayon juda uzoq davom etdi va to'xtatildi. "
+                        "Qayta urinib ko'ring."
+                    )
                 except Exception as e:
                     logger.exception("Reel yaratishda xatolik: %s", e)
                     visible_reply += "\n\n⚠️ Reel yaratishda xatolik yuz berdi."
