@@ -208,6 +208,37 @@ faylini berish kerak:
 ma'lumot bor — uni hech kim bilan bulashmang, faqat Railway
 Variables'ning o'ziga joylashtiring.
 
+## YouTube bot-himoyasini kuchliroq yengish: PoToken xizmati (ixtiyoriy, ilg'or)
+
+Agar cookie qo'shgandan keyin ham ba'zi videolar "sign in"/"format
+not available" xatosini bersa, buning sababi YouTube'ning yanada
+kuchli himoyasi ("PoToken" talabi) bo'lishi mumkin. Buni **alohida,
+mustaqil Railway xizmati** sifatida qo'shish orqali yengish mumkin
+(bu asosiy bot xizmatingizga HECH QANDAY ta'sir qilmaydi — butunlay
+boshqa konteynerda ishlaydi):
+
+1. Railway loyihangizda (xuddi shu project ichida, yangi/alohida
+   emas) **"+ New"** → **"Empty Service"** ni tanlang.
+2. Xizmatga nom bering: aynan **`bgutil-provider`** deb yozing (nom
+   muhim — keyingi qadamda shu nom ishlatiladi).
+3. Shu xizmatning Settings → Source bo'limida **"Docker Image"**ni
+   tanlang, manzil sifatida yozing: `brainicism/bgutil-ytdlp-pot-provider`
+4. Networking bo'limida ichki portni **4416** deb belgilang (faqat
+   ichki/private tarmoq uchun, tashqi domenga chiqarish shart emas).
+5. Deploy bo'lishini kuting (bu — tayyor Docker rasm, qurish shart
+   emas, tez ishga tushadi).
+6. Asosiy bot xizmatingizga (worker) qayting, Variables bo'limiga
+   yangi o'zgaruvchi qo'shing:
+   `POT_PROVIDER_URL` = `http://bgutil-provider.railway.internal:4416`
+7. Saqlang — Railway asosiy xizmatni qayta deploy qiladi. Shundan
+   keyin video yuklash avtomatik ravishda shu yordamchi xizmatdan
+   foydalanadi.
+
+**Eslatma**: agar 2-qadamda xizmatga boshqa nom bergan bo'lsangiz,
+6-qadamdagi manzilda ham aynan o'sha nomni ishlating (masalan nom
+"pot-server" bo'lsa, manzil `http://pot-server.railway.internal:4416`
+bo'ladi).
+
 ## Keyingi kuchaytirishlar (ixtiyoriy)
 
 - **Rasm generatsiya**: Dizayner-agent javobini DALL-E yoki Stability AI

@@ -131,6 +131,18 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
     }
     cookies_file = _get_cookies_file()
 
+    # Agar alohida PoToken-provider xizmati sozlangan bo'lsa (Railway'da
+    # ALOHIDA service sifatida), uning manzilini har bir strategiyaga
+    # qo'shib boramiz - bu YouTube'ning "Sign in to confirm..." (bot-
+    # himoya) devorini yengishga yordam beradi.
+    pot_url = os.getenv("POT_PROVIDER_URL", "").strip()
+
+    def _extractor_args(youtube_args: dict) -> dict:
+        args = {"youtube": youtube_args}
+        if pot_url:
+            args["youtubepot-bgutilhttp"] = {"base_url": [pot_url]}
+        return args
+
     # YouTube tomonidan qo'yiladigan cheklovlar (bot-himoya, PoToken
     # talabi va h.k.) turli video/hisobda turlicha ishlaydi. Shuning
     # uchun BITTA qattiq usul o'rniga, bir nechta strategiyani ketma-ket
@@ -139,20 +151,22 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
     if cookies_file:
         strategies.append(("cookie+barcha-klientlar", {
             "cookiefile": cookies_file,
-            "extractor_args": {"youtube": {"player_client": ["android", "ios", "web", "tv"]}},
+            "extractor_args": _extractor_args({"player_client": ["android", "ios", "web", "tv"]}),
         }))
         strategies.append(("cookie+faqat-web", {
             "cookiefile": cookies_file,
-            "extractor_args": {"youtube": {"player_client": ["web"]}},
+            "extractor_args": _extractor_args({"player_client": ["web"]}),
         }))
         strategies.append(("cookie+mobil-klientlar", {
             "cookiefile": cookies_file,
-            "extractor_args": {"youtube": {"player_client": ["android", "ios", "tv"]}},
+            "extractor_args": _extractor_args({"player_client": ["android", "ios", "tv"]}),
         }))
     strategies.append(("cookiesiz+mobil-klientlar", {
-        "extractor_args": {"youtube": {"player_client": ["android", "ios", "tv"]}},
+        "extractor_args": _extractor_args({"player_client": ["android", "ios", "tv"]}),
     }))
-    strategies.append(("cookiesiz+standart", {}))
+    strategies.append(("cookiesiz+standart", {
+        "extractor_args": _extractor_args({}) if pot_url else {},
+    }))
 
     attempt_errors = []
     for name, extra_opts in strategies:

@@ -10,3 +10,4 @@ reportlab==4.2.5
 beautifulsoup4==4.12.3
 yt-dlp>=2024.10.0
 Pillow==10.4.0
+bgutil-ytdlp-pot-provider>=1.0.0
