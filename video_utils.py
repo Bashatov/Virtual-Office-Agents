@@ -39,15 +39,27 @@ if not os.path.exists(FONT_FILE):
     FONT_FILE = None
 
 
-def _run(cmd: list, check: bool = True) -> subprocess.CompletedProcess:
+def _run(cmd: list, check: bool = True, timeout: int = 120) -> subprocess.CompletedProcess:
     """
     ffmpeg/ffprobe buyrug'ini bajaradi. MUHIM: avvalgi versiyada bu
     yerda xato (returncode != 0) sezilmasdan o'tkazib yuborilar edi -
     natijada ffmpeg "muvaffaqiyatsiz" bo'lsa ham, bo'sh/buzilgan fayl
     "tayyor" deb hisoblanib, foydalanuvchiga yuborilib yuborilgan.
-    Endi xato bo'lsa - aniq xabar bilan RuntimeError chiqadi.
+    Endi xato bo'lsa - aniq xabar bilan RuntimeError chiqadi. Vaqt-limiti
+    ham 120 soniyagacha qisqartirildi (avval 600 edi) - bizning
+    segmentlarimiz qisqa (3-12s) bo'lgani uchun bunchalik uzoq kutish
+    shart emas, va bu tizim "osilib qolishi"ning oldini oladi.
     """
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as e:
+        logger.error("Buyruq vaqt-limitidan oshdi (%ss): %s", timeout, " ".join(cmd))
+        raise RuntimeError(
+            f"'{cmd[0]}' {timeout} soniyada tugamadi (vaqt-limiti)"
+        ) from e
+
     if check and result.returncode != 0:
         logger.error(
             "Buyruq muvaffaqiyatsiz (%s):\nSTDOUT: %s\nSTDERR: %s",

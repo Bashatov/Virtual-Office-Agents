@@ -44,6 +44,7 @@ def generate_reply(provider: str, model: str, system_prompt: str, history: list[
                 max_tokens=1500,
                 system=system_prompt,
                 messages=history,
+                timeout=90,
             )
             return "".join(
                 block.text for block in resp.content if block.type == "text"
@@ -56,6 +57,7 @@ def generate_reply(provider: str, model: str, system_prompt: str, history: list[
                 model=model,
                 max_tokens=1500,
                 messages=messages,
+                timeout=90,
             )
             return resp.choices[0].message.content.strip()
 
@@ -80,6 +82,7 @@ def transcribe_voice(file_bytes: bytes) -> str:
         resp = client.audio.transcriptions.create(
             model="whisper-1",
             file=audio_file,
+            timeout=60,
         )
         return (resp.text or "").strip()
     except Exception as e:
@@ -110,6 +113,7 @@ def analyze_image(provider: str, model: str, image_bytes: bytes, prompt: str) ->
                         {"type": "text", "text": prompt},
                     ],
                 }],
+                timeout=90,
             )
             return "".join(
                 block.text for block in resp.content if block.type == "text"
@@ -129,6 +133,7 @@ def analyze_image(provider: str, model: str, image_bytes: bytes, prompt: str) ->
                         }},
                     ],
                 }],
+                timeout=90,
             )
             return resp.choices[0].message.content.strip()
 
@@ -149,6 +154,7 @@ def generate_image(prompt: str) -> bytes:
             prompt=prompt,
             size="1024x1024",
             n=1,
+            timeout=120,
         )
         data = resp.data[0]
 
@@ -183,6 +189,7 @@ def edit_image(image_bytes: bytes, prompt: str) -> bytes:
             model="gpt-image-1",
             image=image_file,
             prompt=prompt,
+            timeout=120,
         )
         data = resp.data[0]
 
