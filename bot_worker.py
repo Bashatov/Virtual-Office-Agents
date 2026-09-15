@@ -635,12 +635,25 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     )
                     logger.info("[REEL] 6/6 OK: video tayyor: %s", output_path)
 
+                    # Telegram ba'zan MP4'ning ichki metama'lumotini
+                    # to'g'ri o'qiy olmay, videoni "0:00" deb ko'rsatishi
+                    # mumkin - shuning uchun haqiqiy davomiylik/o'lchamni
+                    # ANIQ o'zimiz beramiz (ffprobe orqali o'lchab).
+                    final_info = video_utils.get_video_info(output_path)
+                    width, height = video_utils.FORMAT_PRESETS.get(
+                        plan["format"], video_utils.FORMAT_PRESETS[video_utils.DEFAULT_FORMAT]
+                    )
+
                     await _send_with_retry(
                         context.bot.send_video,
                         chat_id=chat_id,
                         video=InputFile(output_path),
                         message_thread_id=origin_thread_id,
                         caption=f"🎬 {plan['title']}",
+                        duration=int(final_info.get("duration") or 0) or None,
+                        width=width,
+                        height=height,
+                        supports_streaming=True,
                     )
                     logger.info("[REEL] Yuborildi!")
                     segments_list = "\n".join(

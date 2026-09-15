@@ -502,7 +502,12 @@ def _make_segment(src: str, start: float, duration: float, width: int,
         # oldini olish uchun). Fayl hajmi biroz kattaroq bo'lishi mumkin,
         # lekin bu qisqa (3-12s) segmentlar uchun muhim emas.
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
-        "-threads", "2",
+        "-threads", "2", "-pix_fmt", "yuv420p",
+        # MUHIM: "+faststart" - MP4 metama'lumotini fayl BOSHIGA
+        # joylashtiradi. Buning yo'qligi Telegram/brauzerlarda videoni
+        # "0:00, ochilmaydi" deb ko'rsatishiga sabab bo'ladi - fayl
+        # o'zi butun bo'lsa ham.
+        "-movflags", "+faststart",
         "-c:a", "aac", "-r", "30", out_path, "-y", "-loglevel", "error",
     ])
 
@@ -596,7 +601,8 @@ def _build_reel_sync(src: str, plan: dict, dest_dir: str) -> str:
     output_path = os.path.join(dest_dir, "reel_final.mp4")
     _run([
         "ffmpeg", "-f", "concat", "-safe", "0", "-i", concat_list,
-        "-c", "copy", output_path, "-y", "-loglevel", "error",
+        "-c", "copy", "-movflags", "+faststart",
+        output_path, "-y", "-loglevel", "error",
     ])
 
     # Yakuniy faylni ham tekshiramiz - kamida bir necha soniya
