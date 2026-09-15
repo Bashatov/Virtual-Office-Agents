@@ -247,7 +247,9 @@ def build_worker(agent_key: str, bots: dict) -> Application:
         history = db.get_history(agent_key, chat_id)
 
         system_prompt = build_system_prompt(agent_key)
-        reply = generate_reply(cfg["provider"], cfg["model"], system_prompt, history)
+        reply = await asyncio.to_thread(
+            generate_reply, cfg["provider"], cfg["model"], system_prompt, history
+        )
 
         visible_reply = reply
 
@@ -398,7 +400,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             image_prompt = create_image_match.group(1).strip()
             visible_reply = reply[: create_image_match.start()].strip()
 
-            image_bytes = generate_image(image_prompt)
+            image_bytes = await asyncio.to_thread(generate_image, image_prompt)
             if image_bytes:
                 await _send_with_retry(
                     context.bot.send_photo,
@@ -426,7 +428,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                 try:
                     tg_file = await context.bot.get_file(last_file_id)
                     original_bytes = bytes(await tg_file.download_as_bytearray())
-                    edited_bytes = edit_image(original_bytes, edit_prompt)
+                    edited_bytes = await asyncio.to_thread(edit_image, original_bytes, edit_prompt)
                     if edited_bytes:
                         await _send_with_retry(
                             context.bot.send_photo,
@@ -450,7 +452,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
 
             employee = db.get_employee(employee_key)
             if employee and employee.get("username") and employee["username"] != "-" and GROUP_CHAT_ID:
-                image_bytes = generate_image(image_prompt)
+                image_bytes = await asyncio.to_thread(generate_image, image_prompt)
                 if image_bytes:
                     target_thread = REVERSE_TOPIC_MAP.get(employee_key)
                     if target_thread is None:
@@ -577,8 +579,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     )
                     sheet_bytes = video_utils.build_contact_sheet(frames)
 
-                    vision_response = analyze_image(
-                        cfg["provider"], cfg["model"], sheet_bytes,
+                    vision_prompt = (
                         "Bu - videodan olingan kadrlar to'plami (chap "
                         "yuqoridan o'ngga, yuqoridan pastga vaqt tartibida). "
                         f"Video davomiyligi: {int(duration)} soniya.\n\n"
@@ -605,7 +606,11 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                         "style: <bold_badges yoki minimal_caption yoki cinematic_bar>\n"
                         "title: <umumiy sarlavha, KATTA HARFLAR, qisqa>\n"
                         "MM:SS | davomiylik_soniya | #RRGGBB | Sarlavha\n"
-                        "(kerakli sondagi shunday qatorlar, 2-6 ta)",
+                        "(kerakli sondagi shunday qatorlar, 2-6 ta)"
+                    )
+                    vision_response = await asyncio.to_thread(
+                        analyze_image, cfg["provider"], cfg["model"],
+                        sheet_bytes, vision_prompt,
                     )
                     plan = video_utils.parse_reel_plan(vision_response, duration)
 
@@ -760,7 +765,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
 
         tg_file = await update.message.voice.get_file()
         file_bytes = bytes(await tg_file.download_as_bytearray())
-        transcribed = transcribe_voice(file_bytes)
+        transcribed = await asyncio.to_thread(transcribe_voice, file_bytes)
 
         if not transcribed:
             await update.message.reply_text(
@@ -791,8 +796,8 @@ def build_worker(agent_key: str, bots: dict) -> Application:
         # oxirgi yuborilgan rasmning file_id'sini saqlab qo'yamiz.
         db.save_last_photo(agent_key, update.effective_chat.id, photo.file_id)
 
-        description = analyze_image(
-            cfg["provider"], cfg["model"], photo_bytes,
+        description = await asyncio.to_thread(
+            analyze_image, cfg["provider"], cfg["model"], photo_bytes,
             "Bu rasmda nima ko'rinib turibdi? Batafsil va aniq tasvirlab "
             "ber: obyektlar, muhit, ranglar, matn (agar bo'lsa), umumiy "
             "kayfiyat va uslub.",
@@ -888,8 +893,8 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             try:
                 tg_file = await video.thumbnail.get_file()
                 thumb_bytes = bytes(await tg_file.download_as_bytearray())
-                description = analyze_image(
-                    cfg["provider"], cfg["model"], thumb_bytes,
+                description = await asyncio.to_thread(
+                    analyze_image, cfg["provider"], cfg["model"], thumb_bytes,
                     "Bu - video faylning asosiy kadri (thumbnail). Unda nima "
                     "ko'rinib turibdi? Batafsil tasvirlab ber.",
                 )
@@ -948,7 +953,9 @@ async def task_checker_loop(agent_key: str, bots: dict, interval_sec: int = 20):
             for task in pending:
                 system_prompt = build_system_prompt(agent_key)
                 history = [{"role": "user", "content": task["task_text"]}]
-                result = generate_reply(cfg["provider"], cfg["model"], system_prompt, history)
+                result = await asyncio.to_thread(
+                    generate_reply, cfg["provider"], cfg["model"], system_prompt, history
+                )
                 db.mark_task_done(task["_id"], result)
 
                 origin_agent_key = task.get("from_agent", agent_key)
