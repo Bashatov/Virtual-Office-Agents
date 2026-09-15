@@ -39,6 +39,7 @@ import asyncio
 import logging
 import datetime
 from telegram import Update, InputFile
+from telegram.error import TimedOut, NetworkError
 from telegram.ext import (
     Application, MessageHandler, CommandHandler, ContextTypes, filters,
 )
@@ -86,6 +87,27 @@ def _parse_fields(raw: str) -> dict:
     return fields
 
 
+async def _send_with_retry(func, *args, retries: int = 2, **kwargs):
+    """
+    Telegram'ga katta fayl/rasm yuborishda vaqti-vaqti bilan yuz
+    beradigan vaqtinchalik tarmoq uzilishlariga (ConnectTimeout va
+    h.k.) chidamli bo'lish uchun - xato bo'lsa, bir necha marta
+    qayta urinadi.
+    """
+    last_exc = None
+    for attempt in range(retries + 1):
+        try:
+            return await func(*args, **kwargs)
+        except (TimedOut, NetworkError) as e:
+            last_exc = e
+            logger.warning(
+                "Yuborishda vaqtinchalik tarmoq xatosi (urinish %d/%d): %s",
+                attempt + 1, retries + 1, e,
+            )
+            await asyncio.sleep(2)
+    raise last_exc
+
+
 async def send_message_to_employee(bot, agent_key: str, cfg: dict,
                                      employee_key: str, message_text: str,
                                      origin_chat_id: int):
@@ -113,7 +135,7 @@ async def send_message_to_employee(bot, agent_key: str, cfg: dict,
     send_kwargs = {"chat_id": int(GROUP_CHAT_ID), "text": mention_text}
     if target_thread is not None:
         send_kwargs["message_thread_id"] = target_thread
-    await bot.send_message(**send_kwargs)
+    await _send_with_retry(bot.send_message, **send_kwargs)
 
     db.create_human_task(
         employee_key, employee["username"], int(GROUP_CHAT_ID),
@@ -128,7 +150,15 @@ def build_worker(agent_key: str, bots: dict) -> Application:
     if not token:
         raise RuntimeError(f"{cfg['token_env']} .env faylida topilmadi")
 
-    app = Application.builder().token(token).build()
+    app = (
+        Application.builder()
+        .token(token)
+        .connect_timeout(30)
+        .read_timeout(60)
+        .write_timeout(60)
+        .pool_timeout(30)
+        .build()
+    )
 
     # ---------- Guruhda "chaqirilganmi" tekshiruvi ----------
 
@@ -242,7 +272,8 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     file_bytes = file_utils.create_pdf(title, body_text)
                     filename = f"{title}.pdf"
 
-                await context.bot.send_document(
+                await _send_with_retry(
+                    context.bot.send_document,
                     chat_id=chat_id,
                     document=InputFile(io.BytesIO(file_bytes), filename=filename),
                     message_thread_id=origin_thread_id,
@@ -308,7 +339,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     }
                     if target_thread is not None:
                         send_kwargs["message_thread_id"] = target_thread
-                    await context.bot.send_document(**send_kwargs)
+                    await _send_with_retry(context.bot.send_document, **send_kwargs)
 
                     db.create_human_task(
                         employee_key, employee["username"], int(GROUP_CHAT_ID),
@@ -336,7 +367,8 @@ def build_worker(agent_key: str, bots: dict) -> Application:
 
             image_bytes = generate_image(image_prompt)
             if image_bytes:
-                await context.bot.send_photo(
+                await _send_with_retry(
+                    context.bot.send_photo,
                     chat_id=chat_id,
                     photo=InputFile(io.BytesIO(image_bytes), filename="rasm.png"),
                     message_thread_id=origin_thread_id,
@@ -363,7 +395,8 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     original_bytes = bytes(await tg_file.download_as_bytearray())
                     edited_bytes = edit_image(original_bytes, edit_prompt)
                     if edited_bytes:
-                        await context.bot.send_photo(
+                        await _send_with_retry(
+                            context.bot.send_photo,
                             chat_id=chat_id,
                             photo=InputFile(io.BytesIO(edited_bytes), filename="tahrirlangan.png"),
                             message_thread_id=origin_thread_id,
@@ -399,7 +432,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     }
                     if target_thread is not None:
                         send_kwargs["message_thread_id"] = target_thread
-                    await context.bot.send_photo(**send_kwargs)
+                    await _send_with_retry(context.bot.send_photo, **send_kwargs)
 
                     db.create_human_task(
                         employee_key, employee["username"], int(GROUP_CHAT_ID),
@@ -470,7 +503,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
         origin_agent_key = claimed.get("origin_agent", agent_key)
         origin_bot = bots.get(origin_agent_key) or bots.get(agent_key)
         text = f"📩 @{username} javob berdi:\n\n{update.message.text}"
-        await origin_bot.send_message(chat_id=claimed["origin_chat_id"], text=text)
+        await _send_with_retry(origin_bot.send_message, chat_id=claimed["origin_chat_id"], text=text)
         # MUHIM: natijani origin_agent (masalan Direktor)ning o'z xotirasiga
         # ham yozamiz - shunda keyinroq so'ralsa, agent buni "eslaydi".
         db.save_message(origin_agent_key, claimed["origin_chat_id"], "assistant", text)
@@ -667,7 +700,7 @@ async def task_checker_loop(agent_key: str, bots: dict, interval_sec: int = 20):
                 origin_agent_key = task.get("from_agent", agent_key)
                 origin_bot = bots.get(origin_agent_key) or bots.get(agent_key)
                 text = f"✅ {cfg['display_name']} bajardi:\n\n{result}"
-                await origin_bot.send_message(chat_id=task["origin_chat_id"], text=text)
+                await _send_with_retry(origin_bot.send_message, chat_id=task["origin_chat_id"], text=text)
                 # MUHIM: natijani origin_agent (masalan Direktor)ning o'z
                 # xotirasiga ham yozamiz - shunda keyinroq "o'sha savollarni
                 # yubora olasanmi" deb so'ralsa, agent buni eslaydi.
@@ -714,7 +747,7 @@ async def reminder_checker_loop(agent_key: str, bots: dict, interval_sec: int = 
                         f"yuborib bo'lmadi - xodim topilmadi yoki "
                         "GROUP_CHAT_ID sozlanmagan."
                     )
-                await origin_bot.send_message(chat_id=reminder["origin_chat_id"], text=text)
+                await _send_with_retry(origin_bot.send_message, chat_id=reminder["origin_chat_id"], text=text)
                 db.save_message(origin_agent_key, reminder["origin_chat_id"], "assistant", text)
         except Exception:
             logger.exception("reminder_checker_loop xatolik (%s)", agent_key)
