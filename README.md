@@ -60,10 +60,13 @@ istalgan vaqt o'zgartirish mumkin.
    API kalitlar, MONGODB_URI, GROUP_CHAT_ID).
 5. Railway avtomatik `Procfile`ni o'qib, `python main.py` orqali botni
    ishga tushiradi. Bir necha daqiqadan so'ng barcha 6 ta bot onlayn
-   bo'ladi. `nixpacks.toml` fayli tufayli Railway avtomatik `ffmpeg`
+   bo'ladi. `railpack.json` fayli tufayli Railway avtomatik `ffmpeg`
    va shriftlarni ham o'rnatadi (video montaj funksiyasi uchun) —
    bu bosqich birinchi deploy'da 1-2 daqiqa qo'shimcha vaqt olishi
    mumkin, alohida sozlash shart emas.
+   (Eslatma: agar loyihada eski `nixpacks.toml` fayli qolgan bo'lsa,
+   uni o'chirib tashlashingiz mumkin — Railway hozir shu maqsad uchun
+   `railpack.json`dan foydalanadi.)
 
 ## Qanday ishlaydi
 
