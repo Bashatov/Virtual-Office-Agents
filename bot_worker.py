@@ -236,6 +236,117 @@ def build_worker(agent_key: str, bots: dict) -> Application:
 
         return False
 
+    # ---------- Video-dan "reel" yasash quvuri (LLM tegiga bog'liq emas) ----------
+    # MUHIM: bu funksiya alohida chiqarildi, chunki LLM ba'zan "kutib turing"
+    # deb yozadi-yu, lekin texnik [CREATE_REEL] tegini QO'SHISHNI unutadi -
+    # natijada chiroyli va'da beriladi, lekin HAQIQIY ishlov umuman
+    # boshlanmaydi. Shuning uchun video to'g'ridan-to'g'ri yuklanganda
+    # (handle_video), bu funksiya AI qaroriga bog'liq bo'lmasdan,
+    # MAJBURIY chaqiriladi - xuddi YouTube yuklashda qilganimizdek.
+    async def run_reel_pipeline(chat_id: int, src_path: str, user_hint: str,
+                                 context: ContextTypes.DEFAULT_TYPE,
+                                 origin_thread_id) -> str:
+        src_dir = os.path.dirname(src_path)
+        try:
+            logger.info("[REEL] 1/6: video ma'lumotini olyapman...")
+            info = video_utils.get_video_info(src_path)
+            duration = info.get("duration", 30)
+            logger.info("[REEL] 1/6 OK: davomiyligi=%s", duration)
+
+            logger.info("[REEL] 2/6: nomzod kadrlarni chiqaryapman...")
+            frames = await video_utils.extract_candidate_frames(
+                src_path, src_dir, count=8
+            )
+            logger.info("[REEL] 2/6 OK: %d ta kadr", len(frames))
+
+            logger.info("[REEL] 3/6: kontakt-sheet yasayapman...")
+            sheet_bytes = video_utils.build_contact_sheet(frames)
+            logger.info("[REEL] 3/6 OK: %d bayt", len(sheet_bytes))
+
+            vision_prompt = (
+                "Bu - videodan olingan kadrlar to'plami (chap "
+                "yuqoridan o'ngga, yuqoridan pastga vaqt tartibida). "
+                f"Video davomiyligi: {int(duration)} soniya.\n\n"
+                f"Foydalanuvchi ko'rsatmasi: {user_hint or '(berilmagan - o‘zing hal qil)'}\n\n"
+                "Vazifang: shu video mazmuniga ENG MOS qisqa-metrajli "
+                "kontent uchun KREATIV qaror qabul qilish. O'zing "
+                "hal qil:\n"
+                "1) FORMAT - qaysi biri mos: 9:16 (Reels/TikTok/"
+                "Stories), 1:1 (kvadrat post), 16:9 (YouTube/"
+                "landshaft), 4:5 (Instagram post). Foydalanuvchi "
+                "ko'rsatmasida aniq format bo'lsa, o'shani tanla.\n"
+                "2) USLUB - video kayfiyatiga qarab: bold_badges "
+                "(raqamli belgili, energetik - o'yin/sport/reklama "
+                "uchun), minimal_caption (toza, zamonaviy, pastki "
+                "kichik yozuv - vlog/lifestyle uchun), cinematic_bar "
+                "(nozik letterbox chiziqlar - tabiat/hujjatli uslub).\n"
+                "3) NECHTA LAHZA kerak (2 dan 6 tagacha) - "
+                "videoning boyligiga qarab o'zing tanla.\n"
+                "4) HAR BIR LAHZA uchun: necha soniya davom etishi "
+                "(3-12 oralig'ida), video kayfiyatiga mos rang "
+                "(#RRGGBB), va qisqa o'zbekcha sarlavha (2-3 so'z).\n\n"
+                "Aynan shu formatda javob ber, boshqa izoh yozma:\n"
+                "format: <9:16 yoki 1:1 yoki 16:9 yoki 4:5>\n"
+                "style: <bold_badges yoki minimal_caption yoki cinematic_bar>\n"
+                "title: <umumiy sarlavha, KATTA HARFLAR, qisqa>\n"
+                "MM:SS | davomiylik_soniya | #RRGGBB | Sarlavha\n"
+                "(kerakli sondagi shunday qatorlar, 2-6 ta)"
+            )
+            logger.info("[REEL] 4/6: AI vision so'rovi yuborilmoqda...")
+            vision_response = await asyncio.wait_for(
+                asyncio.to_thread(
+                    analyze_image, cfg["provider"], cfg["model"],
+                    sheet_bytes, vision_prompt,
+                ),
+                timeout=100,
+            )
+            logger.info("[REEL] 4/6 OK: javob uzunligi=%d", len(vision_response or ""))
+            plan = video_utils.parse_reel_plan(vision_response, duration)
+            logger.info("[REEL] 5/6: reja tuzildi: %s", plan)
+
+            output_path = await asyncio.wait_for(
+                video_utils.build_highlight_reel(src_path, plan, src_dir),
+                timeout=180,
+            )
+            logger.info("[REEL] 6/6 OK: video tayyor: %s", output_path)
+
+            final_info = video_utils.get_video_info(output_path)
+            width, height = video_utils.FORMAT_PRESETS.get(
+                plan["format"], video_utils.FORMAT_PRESETS[video_utils.DEFAULT_FORMAT]
+            )
+
+            await _send_with_retry(
+                context.bot.send_video,
+                chat_id=chat_id,
+                video=InputFile(output_path),
+                message_thread_id=origin_thread_id,
+                caption=f"🎬 {plan['title']}",
+                duration=int(final_info.get("duration") or 0) or None,
+                width=width,
+                height=height,
+                supports_streaming=True,
+            )
+            logger.info("[REEL] Yuborildi!")
+            segments_list = "\n".join(
+                f"{i}. {s['caption']} ({s['duration']:.0f}s)"
+                for i, s in enumerate(plan["segments"], 1)
+            )
+            video_utils.cleanup_dir(src_dir)
+            return (
+                f"\n\n✅ Reel tayyor va yuborildi!\n"
+                f"Format: {plan['format']} | Uslub: {plan['style']}\n"
+                f"Ichidagi lahzalar:\n{segments_list}"
+            )
+        except asyncio.TimeoutError:
+            logger.error("[REEL] VAQT-LIMITIDAN OSHDI (asyncio.wait_for)")
+            return (
+                "\n\n⚠️ Jarayon juda uzoq davom etdi va to'xtatildi. "
+                "Qayta urinib ko'ring."
+            )
+        except Exception as e:
+            logger.exception("Reel yaratishda xatolik: %s", e)
+            return "\n\n⚠️ Reel yaratishda xatolik yuz berdi."
+
     # ---------- Asosiy mantiq (matn, fayl, ovoz - hammasi shu yerga keladi) ----------
 
     async def process_user_text(chat_id: int, user_text: str, update: Update,
@@ -572,117 +683,10 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     "🎬 Video tahlil qilinmoqda va eng mos format/uslub "
                     "tanlanmoqda (1-3 daqiqa vaqt olishi mumkin)..."
                 )
-                try:
-                    src_path = last_video["local_path"]
-                    # MUHIM: tozalashda ANIQ shu videoning o'z papkasini
-                    # ishlatamiz (chat_key orqali qayta hisoblamaymiz) -
-                    # aks holda boshqa video/urinishning papkasini
-                    # tasodifan o'chirib yuborish xavfi bor edi.
-                    src_dir = os.path.dirname(src_path)
-                    logger.info("[REEL] 1/6: video ma'lumotini olyapman...")
-                    info = video_utils.get_video_info(src_path)
-                    duration = info.get("duration", 30)
-                    logger.info("[REEL] 1/6 OK: davomiyligi=%s", duration)
-
-                    logger.info("[REEL] 2/6: nomzod kadrlarni chiqaryapman...")
-                    frames = await video_utils.extract_candidate_frames(
-                        src_path, os.path.dirname(src_path), count=8
-                    )
-                    logger.info("[REEL] 2/6 OK: %d ta kadr", len(frames))
-
-                    logger.info("[REEL] 3/6: kontakt-sheet yasayapman...")
-                    sheet_bytes = video_utils.build_contact_sheet(frames)
-                    logger.info("[REEL] 3/6 OK: %d bayt", len(sheet_bytes))
-
-                    vision_prompt = (
-                        "Bu - videodan olingan kadrlar to'plami (chap "
-                        "yuqoridan o'ngga, yuqoridan pastga vaqt tartibida). "
-                        f"Video davomiyligi: {int(duration)} soniya.\n\n"
-                        f"Foydalanuvchi ko'rsatmasi: {user_hint or '(berilmagan - o‘zing hal qil)'}\n\n"
-                        "Vazifang: shu video mazmuniga ENG MOS qisqa-metrajli "
-                        "kontent uchun KREATIV qaror qabul qilish. O'zing "
-                        "hal qil:\n"
-                        "1) FORMAT - qaysi biri mos: 9:16 (Reels/TikTok/"
-                        "Stories), 1:1 (kvadrat post), 16:9 (YouTube/"
-                        "landshaft), 4:5 (Instagram post). Foydalanuvchi "
-                        "ko'rsatmasida aniq format bo'lsa, o'shani tanla.\n"
-                        "2) USLUB - video kayfiyatiga qarab: bold_badges "
-                        "(raqamli belgili, energetik - o'yin/sport/reklama "
-                        "uchun), minimal_caption (toza, zamonaviy, pastki "
-                        "kichik yozuv - vlog/lifestyle uchun), cinematic_bar "
-                        "(nozik letterbox chiziqlar - tabiat/hujjatli uslub).\n"
-                        "3) NECHTA LAHZA kerak (2 dan 6 tagacha) - "
-                        "videoning boyligiga qarab o'zing tanla.\n"
-                        "4) HAR BIR LAHZA uchun: necha soniya davom etishi "
-                        "(3-12 oralig'ida), video kayfiyatiga mos rang "
-                        "(#RRGGBB), va qisqa o'zbekcha sarlavha (2-3 so'z).\n\n"
-                        "Aynan shu formatda javob ber, boshqa izoh yozma:\n"
-                        "format: <9:16 yoki 1:1 yoki 16:9 yoki 4:5>\n"
-                        "style: <bold_badges yoki minimal_caption yoki cinematic_bar>\n"
-                        "title: <umumiy sarlavha, KATTA HARFLAR, qisqa>\n"
-                        "MM:SS | davomiylik_soniya | #RRGGBB | Sarlavha\n"
-                        "(kerakli sondagi shunday qatorlar, 2-6 ta)"
-                    )
-                    logger.info("[REEL] 4/6: AI vision so'rovi yuborilmoqda...")
-                    vision_response = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            analyze_image, cfg["provider"], cfg["model"],
-                            sheet_bytes, vision_prompt,
-                        ),
-                        timeout=100,
-                    )
-                    logger.info("[REEL] 4/6 OK: javob uzunligi=%d", len(vision_response or ""))
-                    plan = video_utils.parse_reel_plan(vision_response, duration)
-                    logger.info("[REEL] 5/6: reja tuzildi: %s", plan)
-
-                    output_path = await asyncio.wait_for(
-                        video_utils.build_highlight_reel(
-                            src_path, plan, os.path.dirname(src_path),
-                        ),
-                        timeout=180,
-                    )
-                    logger.info("[REEL] 6/6 OK: video tayyor: %s", output_path)
-
-                    # Telegram ba'zan MP4'ning ichki metama'lumotini
-                    # to'g'ri o'qiy olmay, videoni "0:00" deb ko'rsatishi
-                    # mumkin - shuning uchun haqiqiy davomiylik/o'lchamni
-                    # ANIQ o'zimiz beramiz (ffprobe orqali o'lchab).
-                    final_info = video_utils.get_video_info(output_path)
-                    width, height = video_utils.FORMAT_PRESETS.get(
-                        plan["format"], video_utils.FORMAT_PRESETS[video_utils.DEFAULT_FORMAT]
-                    )
-
-                    await _send_with_retry(
-                        context.bot.send_video,
-                        chat_id=chat_id,
-                        video=InputFile(output_path),
-                        message_thread_id=origin_thread_id,
-                        caption=f"🎬 {plan['title']}",
-                        duration=int(final_info.get("duration") or 0) or None,
-                        width=width,
-                        height=height,
-                        supports_streaming=True,
-                    )
-                    logger.info("[REEL] Yuborildi!")
-                    segments_list = "\n".join(
-                        f"{i}. {s['caption']} ({s['duration']:.0f}s)"
-                        for i, s in enumerate(plan["segments"], 1)
-                    )
-                    visible_reply += (
-                        f"\n\n✅ Reel tayyor va yuborildi!\n"
-                        f"Format: {plan['format']} | Uslub: {plan['style']}\n"
-                        f"Ichidagi lahzalar:\n{segments_list}"
-                    )
-                    video_utils.cleanup_dir(src_dir)
-                except asyncio.TimeoutError:
-                    logger.error("[REEL] VAQT-LIMITIDAN OSHDI (asyncio.wait_for)")
-                    visible_reply += (
-                        "\n\n⚠️ Jarayon juda uzoq davom etdi va to'xtatildi. "
-                        "Qayta urinib ko'ring."
-                    )
-                except Exception as e:
-                    logger.exception("Reel yaratishda xatolik: %s", e)
-                    visible_reply += "\n\n⚠️ Reel yaratishda xatolik yuz berdi."
+                visible_reply += await run_reel_pipeline(
+                    chat_id, last_video["local_path"], user_hint,
+                    context, origin_thread_id,
+                )
 
         db.save_message(agent_key, chat_id, "assistant", visible_reply)
         await update.message.reply_text(visible_reply)
@@ -918,13 +922,28 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                 update.message.caption or "Yuborilgan video",
                 video.duration or 0,
             )
-            user_text = (
-                f"[Foydalanuvchi video fayl yubordi, davomiyligi "
-                f"~{video.duration or 0} soniya. Video muvaffaqiyatli "
-                f"yuklab olindi va reel yaratishga tayyor.]\n\n"
-                f"Foydalanuvchi izohi: {update.message.caption or '(yo`q)'}"
+
+            # MUHIM: bu yerda process_user_text (LLM)ga MUROJAAT QILMAYMIZ -
+            # chunki LLM ba'zan "kutib turing" deb yozib, lekin texnik
+            # [CREATE_REEL] tegini QO'SHISHNI unutgan holatlar kuzatilgan
+            # (chiroyli va'da, lekin HAQIQIY ishlov boshlanmagan). Shuning
+            # uchun video to'g'ridan-to'g'ri yuklanganda, reel yaratish
+            # MAJBURIY va bevosita ishga tushiriladi - AI faqat format/
+            # uslub/lahzalarni TANLASHDA (run_reel_pipeline ICHIDA)
+            # ishtirok etadi, "boshlanadimi-yo'qmi" degan qarorda emas.
+            origin_thread_id = getattr(update.message, "message_thread_id", None)
+            user_hint = update.message.caption or ""
+
+            await update.message.reply_text(
+                "🎬 Video tahlil qilinmoqda va eng mos format/uslub "
+                "tanlanmoqda (1-3 daqiqa vaqt olishi mumkin)..."
             )
-            await process_user_text(chat_id, user_text, update, context)
+            result_text = await run_reel_pipeline(
+                chat_id, local_path, user_hint, context, origin_thread_id,
+            )
+            result_text = result_text.strip() or "✅ Tayyor."
+            db.save_message(agent_key, chat_id, "assistant", result_text)
+            await update.message.reply_text(result_text)
             return
 
         # Boshqa agentlar uchun: avvalgidek faqat asosiy kadr tahlili
