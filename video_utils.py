@@ -162,51 +162,174 @@ def build_contact_sheet(frames: list) -> bytes:
     return buf.getvalue()
 
 
-# ---------- 4) Yakuniy 9:16 "reel" videoni yig'ish ----------
+# ---------- 4) Yakuniy "reel" videoni yig'ish (moslashuvchan format/uslub) ----------
 
-def _make_segment(src: str, start: float, panel_no: str, badge_text: str,
-                   title_text: str, out_path: str, seg_len: float = 5.0):
-    def esc(t: str) -> str:
-        return t.replace("'", "\u2019").replace(":", "\\:")
+# Har xil maqsad uchun tayyor o'lcham "pресет"lari - AI shulardan birini
+# video mazmuniga qarab tanlaydi (universal, faqat 9:16 bilan cheklanmagan).
+FORMAT_PRESETS = {
+    "9:16": (1080, 1920),   # Reels / TikTok / Stories
+    "1:1": (1080, 1080),    # kvadrat post
+    "16:9": (1920, 1080),   # YouTube / landshaft
+    "4:5": (1080, 1350),    # Instagram post
+}
+DEFAULT_FORMAT = "9:16"
 
-    filters = (
-        f"scale=1080:1920:force_original_aspect_ratio=increase,"
-        f"crop=1080:1920,"
-        f"drawbox=x=0:y=0:w=1080:h=220:color=black@0.72:t=fill,"
-        f"drawtext=text='{esc(title_text)}':fontcolor=white:fontsize=54:"
-        f"x=(w-text_w)/2:y=60:borderw=2:bordercolor=black"
+# Har biri boshqacha "kayfiyat" beradigan, oldindan sinalgan uslublar -
+# AI shulardan birini video mazmuniga (o'yin/tabiat/vlog va h.k.) qarab
+# tanlaydi. Bularning ffmpeg filtri QATTIQ yozilgan - AI faqat NOMINI
+# tanlaydi, filtr matnini o'zi yozmaydi.
+VALID_STYLES = ("bold_badges", "minimal_caption", "cinematic_bar")
+
+_HEX_RE = re.compile(r"^#?[0-9A-Fa-f]{6}$")
+
+
+def _safe_color(color: str, default: str = "FFD700") -> str:
+    if color and _HEX_RE.match(color.strip()):
+        return color.strip().lstrip("#").upper()
+    return default
+
+
+def _esc(text: str) -> str:
+    """ffmpeg drawtext ichida maxsus belgilarni xavfsiz escape qiladi."""
+    return (
+        text.replace("\\", "")
+        .replace("'", "\u2019")
+        .replace(":", "\\:")
+        .replace("%", "\\%")
     )
-    if FONT_FILE:
-        filters += f":fontfile='{FONT_FILE}'"
-    filters += (
-        f",drawbox=x=50:y=250:w=110:h=80:color=yellow@0.95:t=fill,"
-        f"drawtext=text='{esc(panel_no)}':fontcolor=black:fontsize=46:"
-        f"x=85:y=270"
+
+
+def _make_segment(src: str, start: float, duration: float, width: int,
+                   height: int, style: str, panel_no: str, caption: str,
+                   overall_title: str, accent_color: str, out_path: str):
+    accent = _safe_color(accent_color)
+    caption_safe = _esc(caption)[:40]
+    title_safe = _esc(overall_title)[:40]
+    scale_crop = (
+        f"scale={width}:{height}:force_original_aspect_ratio=increase,"
+        f"crop={width}:{height}"
     )
-    if FONT_FILE:
-        filters += f":fontfile='{FONT_FILE}'"
-    filters += (
-        f",drawtext=text='{esc(badge_text)}':fontcolor=white:fontsize=48:"
-        f"x=185:y=278"
-    )
-    if FONT_FILE:
-        filters += f":fontfile='{FONT_FILE}'"
+    font_part = f":fontfile='{FONT_FILE}'" if FONT_FILE else ""
+
+    if style == "minimal_caption":
+        # Toza/zamonaviy: faqat pastda kichik, shaffof yozuv paneli
+        bar_h = int(height * 0.12)
+        filters = (
+            f"{scale_crop},"
+            f"drawbox=x=0:y={height - bar_h}:w={width}:h={bar_h}:"
+            f"color=black@0.55:t=fill,"
+            f"drawtext=text='{caption_safe}':fontcolor=white:"
+            f"fontsize={int(height * 0.032)}:x=(w-text_w)/2:"
+            f"y={height - bar_h + int(bar_h * 0.32)}:borderw=1:"
+            f"bordercolor=black{font_part}"
+        )
+
+    elif style == "cinematic_bar":
+        # Hujjatli-film uslubi: yupqa letterbox chiziqlar + markaziy matn
+        bar_h = int(height * 0.06)
+        filters = (
+            f"{scale_crop},"
+            f"drawbox=x=0:y=0:w={width}:h={bar_h}:color=black@0.9:t=fill,"
+            f"drawbox=x=0:y={height - bar_h}:w={width}:h={bar_h}:"
+            f"color=black@0.9:t=fill,"
+            f"drawtext=text='{caption_safe}':fontcolor=white:"
+            f"fontsize={int(height * 0.026)}:x=(w-text_w)/2:"
+            f"y={height - bar_h + int(bar_h * 0.25)}:borderw=1:"
+            f"bordercolor=black{font_part}"
+        )
+
+    else:  # "bold_badges" - standart, energetik uslub (raqamli belgi)
+        bar_h = int(height * 0.115)
+        badge_w = int(width * 0.09)
+        badge_h = int(height * 0.06)
+        badge_x = int(width * 0.045)
+        badge_y = bar_h + int(height * 0.01)
+        filters = (
+            f"{scale_crop},"
+            f"drawbox=x=0:y=0:w={width}:h={bar_h}:color=black@0.72:t=fill,"
+            f"drawtext=text='{title_safe}':fontcolor=white:"
+            f"fontsize={int(height * 0.028)}:x=(w-text_w)/2:"
+            f"y={int(bar_h * 0.28)}:borderw=2:bordercolor=black{font_part},"
+            f"drawbox=x={badge_x}:y={badge_y}:w={badge_w}:h={badge_h}:"
+            f"color=0x{accent}@0.95:t=fill,"
+            f"drawtext=text='{panel_no}':fontcolor=black:"
+            f"fontsize={int(height * 0.024)}:x={badge_x + 15}:"
+            f"y={badge_y + int(badge_h * 0.15)}{font_part},"
+            f"drawtext=text='{caption_safe}':fontcolor=white:"
+            f"fontsize={int(height * 0.026)}:x={badge_x + badge_w + 20}:"
+            f"y={badge_y + int(badge_h * 0.15)}{font_part}"
+        )
 
     _run([
-        "ffmpeg", "-ss", str(max(0, start)), "-t", str(seg_len), "-i", src,
+        "ffmpeg", "-ss", str(max(0, start)), "-t", str(duration), "-i", src,
         "-vf", filters,
         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
         "-c:a", "aac", "-r", "30", out_path, "-y", "-loglevel", "error",
     ])
 
 
-def _build_reel_sync(src: str, highlights: list, overall_title: str,
-                      dest_dir: str) -> str:
+_SEGMENT_LINE_RE = re.compile(
+    r"(\d{1,2}):(\d{2})\s*\|\s*(\d{1,2}(?:\.\d+)?)\s*\|\s*(#?[0-9A-Fa-f]{6})\s*\|\s*(.+)"
+)
+
+
+def parse_reel_plan(text: str, video_duration: float) -> dict:
+    """
+    Vision modelning STRUKTURALI javobini (format/style/title/segmentlar)
+    ajratib oladi. Har bir qiymat XAVFSIZ chegaralarga qisqartiriladi
+    (validatsiya) - noto'g'ri/kutilmagan qiymat kelsa, ishonchli
+    standart qiymatga tushadi, hech qachon xato bilan yiqilmaydi.
+    """
+    plan = {"format": DEFAULT_FORMAT, "style": "bold_badges",
+            "title": "HIGHLIGHTS", "segments": []}
+
+    for line in text.splitlines():
+        line = line.strip()
+        low = line.lower()
+        if low.startswith("format:"):
+            val = line.split(":", 1)[1].strip()
+            if val in FORMAT_PRESETS:
+                plan["format"] = val
+        elif low.startswith("style:"):
+            val = line.split(":", 1)[1].strip().lower()
+            if val in VALID_STYLES:
+                plan["style"] = val
+        elif low.startswith("title:"):
+            plan["title"] = line.split(":", 1)[1].strip()[:40] or plan["title"]
+        else:
+            m = _SEGMENT_LINE_RE.search(line)
+            if m:
+                mm, ss, dur, color, caption = m.groups()
+                ts = int(mm) * 60 + int(ss)
+                ts = max(0.0, min(float(ts), max(video_duration - 3, 0)))
+                dur = max(3.0, min(float(dur), 12.0))
+                plan["segments"].append({
+                    "timestamp": ts,
+                    "duration": dur,
+                    "accent_color": color,
+                    "caption": caption.strip()[:40],
+                })
+
+    if len(plan["segments"]) < 2:
+        fallback_names = ["Boshlanishi", "O'rta qismi", "Yakuni"]
+        plan["segments"] = [
+            {"timestamp": video_duration * f, "duration": 5.0,
+             "accent_color": "FFD700", "caption": name}
+            for f, name in zip((0.15, 0.5, 0.85), fallback_names)
+        ]
+    plan["segments"] = plan["segments"][:6]
+    return plan
+
+
+def _build_reel_sync(src: str, plan: dict, dest_dir: str) -> str:
+    width, height = FORMAT_PRESETS.get(plan["format"], FORMAT_PRESETS[DEFAULT_FORMAT])
     segment_paths = []
-    for i, h in enumerate(highlights, start=1):
+    for i, seg in enumerate(plan["segments"], start=1):
         seg_path = os.path.join(dest_dir, f"seg_{i:02d}.mp4")
         _make_segment(
-            src, h["timestamp"], f"{i:02d}", h["caption"], overall_title, seg_path,
+            src, seg["timestamp"], seg["duration"], width, height,
+            plan["style"], f"{i:02d}", seg["caption"], plan["title"],
+            seg["accent_color"], seg_path,
         )
         if os.path.exists(seg_path):
             segment_paths.append(seg_path)
@@ -227,41 +350,10 @@ def _build_reel_sync(src: str, highlights: list, overall_title: str,
     return output_path
 
 
-async def build_highlight_reel(src: str, highlights: list, overall_title: str,
-                                dest_dir: str) -> str:
+async def build_highlight_reel(src: str, plan: dict, dest_dir: str) -> str:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(
-        None, _build_reel_sync, src, highlights, overall_title, dest_dir
-    )
+    return await loop.run_in_executor(None, _build_reel_sync, src, plan, dest_dir)
 
-
-def parse_highlights_response(text: str, video_duration: float) -> list:
-    """
-    Vision modelning javobidan "MM:SS | Sarlavha" formatidagi qatorlarni
-    ajratib oladi. Hech narsa topilmasa, videoni 3 ga bo'lib standart
-    nuqtalarni qaytaradi (zaxira/fallback).
-    """
-    pattern = re.compile(r"(\d{1,2}):(\d{2})\s*[\|\-–—:]\s*(.+)")
-    results = []
-    for line in text.splitlines():
-        m = pattern.search(line.strip())
-        if m:
-            minutes, seconds, caption = m.groups()
-            ts = int(minutes) * 60 + int(seconds)
-            caption = caption.strip().strip("*").strip()[:30]
-            if caption:
-                results.append({"timestamp": float(ts), "caption": caption})
-        if len(results) >= 3:
-            break
-
-    if len(results) < 3:
-        # Zaxira: videoni tengga bo'lib, umumiy nomlar bilan
-        fallback_names = ["Boshlanishi", "O'rta qismi", "Yakuni"]
-        results = [
-            {"timestamp": video_duration * f, "caption": name}
-            for f, name in zip((0.2, 0.5, 0.8), fallback_names)
-        ]
-    return results[:3]
 
 
 def cleanup(chat_key: str):

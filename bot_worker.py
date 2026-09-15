@@ -513,7 +513,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
         # g) Yuklangan/yuborilgan videodan "reel" yaratish (faqat Mobilograf)
         reel_match = CREATE_REEL_RE.search(reply)
         if reel_match:
-            overall_title = reel_match.group(1).strip().splitlines()[0][:60]
+            user_hint = reel_match.group(1).strip()[:200]
             visible_reply = reply[: reel_match.start()].strip()
 
             last_video = db.get_last_video(agent_key, chat_id)
@@ -525,13 +525,14 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                 )
             else:
                 await update.message.reply_text(
-                    "🎬 Video tahlil qilinmoqda va reel tayyorlanmoqda "
-                    "(1-3 daqiqa vaqt olishi mumkin)..."
+                    "🎬 Video tahlil qilinmoqda va eng mos format/uslub "
+                    "tanlanmoqda (1-3 daqiqa vaqt olishi mumkin)..."
                 )
                 try:
                     src_path = last_video["local_path"]
                     chat_key = f"{agent_key}_{chat_id}"
                     info = video_utils.get_video_info(src_path)
+                    duration = info.get("duration", 30)
 
                     frames = await video_utils.extract_candidate_frames(
                         src_path, os.path.dirname(src_path), count=8
@@ -542,21 +543,36 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                         cfg["provider"], cfg["model"], sheet_bytes,
                         "Bu - videodan olingan kadrlar to'plami (chap "
                         "yuqoridan o'ngga, yuqoridan pastga vaqt tartibida). "
-                        "Video davomiyligi: " + str(int(info.get("duration", 0)))
-                        + " soniya. Shu kadrlar orasidan ENG QIZIQARLI 3 "
-                        "tasini tanla. Har biri uchun taxminiy vaqtini "
-                        "(kadr tartib raqamidan hisoblab) va qisqa "
-                        "o'zbekcha sarlavha (2-3 so'z) ber. Faqat shu "
-                        "formatda javob ber, boshqa hech narsa yozma:\n"
-                        "MM:SS | Sarlavha\nMM:SS | Sarlavha\nMM:SS | Sarlavha",
+                        f"Video davomiyligi: {int(duration)} soniya.\n\n"
+                        f"Foydalanuvchi ko'rsatmasi: {user_hint or '(berilmagan - o‘zing hal qil)'}\n\n"
+                        "Vazifang: shu video mazmuniga ENG MOS qisqa-metrajli "
+                        "kontent uchun KREATIV qaror qabul qilish. O'zing "
+                        "hal qil:\n"
+                        "1) FORMAT - qaysi biri mos: 9:16 (Reels/TikTok/"
+                        "Stories), 1:1 (kvadrat post), 16:9 (YouTube/"
+                        "landshaft), 4:5 (Instagram post). Foydalanuvchi "
+                        "ko'rsatmasida aniq format bo'lsa, o'shani tanla.\n"
+                        "2) USLUB - video kayfiyatiga qarab: bold_badges "
+                        "(raqamli belgili, energetik - o'yin/sport/reklama "
+                        "uchun), minimal_caption (toza, zamonaviy, pastki "
+                        "kichik yozuv - vlog/lifestyle uchun), cinematic_bar "
+                        "(nozik letterbox chiziqlar - tabiat/hujjatli uslub).\n"
+                        "3) NECHTA LAHZA kerak (2 dan 6 tagacha) - "
+                        "videoning boyligiga qarab o'zing tanla.\n"
+                        "4) HAR BIR LAHZA uchun: necha soniya davom etishi "
+                        "(3-12 oralig'ida), video kayfiyatiga mos rang "
+                        "(#RRGGBB), va qisqa o'zbekcha sarlavha (2-3 so'z).\n\n"
+                        "Aynan shu formatda javob ber, boshqa izoh yozma:\n"
+                        "format: <9:16 yoki 1:1 yoki 16:9 yoki 4:5>\n"
+                        "style: <bold_badges yoki minimal_caption yoki cinematic_bar>\n"
+                        "title: <umumiy sarlavha, KATTA HARFLAR, qisqa>\n"
+                        "MM:SS | davomiylik_soniya | #RRGGBB | Sarlavha\n"
+                        "(kerakli sondagi shunday qatorlar, 2-6 ta)",
                     )
-                    highlights = video_utils.parse_highlights_response(
-                        vision_response, info.get("duration", 30)
-                    )
+                    plan = video_utils.parse_reel_plan(vision_response, duration)
 
                     output_path = await video_utils.build_highlight_reel(
-                        src_path, highlights, overall_title,
-                        os.path.dirname(src_path),
+                        src_path, plan, os.path.dirname(src_path),
                     )
 
                     await _send_with_retry(
@@ -564,14 +580,16 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                         chat_id=chat_id,
                         video=InputFile(output_path),
                         message_thread_id=origin_thread_id,
-                        caption=f"🎬 {overall_title}",
+                        caption=f"🎬 {plan['title']}",
                     )
-                    captions_list = "\n".join(
-                        f"{i}. {h['caption']}" for i, h in enumerate(highlights, 1)
+                    segments_list = "\n".join(
+                        f"{i}. {s['caption']} ({s['duration']:.0f}s)"
+                        for i, s in enumerate(plan["segments"], 1)
                     )
                     visible_reply += (
-                        f"\n\n✅ Reel tayyor va yuborildi!\nIchidagi kadrlar:\n"
-                        f"{captions_list}"
+                        f"\n\n✅ Reel tayyor va yuborildi!\n"
+                        f"Format: {plan['format']} | Uslub: {plan['style']}\n"
+                        f"Ichidagi lahzalar:\n{segments_list}"
                     )
                     video_utils.cleanup(chat_key)
                 except Exception as e:

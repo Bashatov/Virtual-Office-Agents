@@ -102,14 +102,20 @@ istalgan vaqt o'zgartirish mumkin.
   holatlarda faylni/rasmni/videoni to'g'ridan-to'g'ri yuklab yuboring.
 - **YouTube'dan qiziqarli-kadrlar videosi (faqat Mobilograf)**:
   Mobilografga YouTube havolasini yuborib "buni yuklab, reel qilib "
-  ber" desangiz — u videoni yuklaydi, AI vision orqali eng qiziqarli
-  3 ta kadrni tanlaydi, professional dizaynli (raqamli belgi +
-  sarlavha) 9:16 formatdagi qisqa videoni yig'ib, to'g'ridan-to'g'ri
-  yuboradi. Video faylni to'g'ridan-to'g'ri yuborib ham xuddi shu
-  so'rovni berish mumkin. Bu jarayon 1-3 daqiqa vaqt oladi.
-  **MUHIM**: bu terminal/shell orqali emas, faqat ikkita qattiq
-  belgilangan xavfsiz funksiya orqali ishlaydi — AI erkin buyruq
-  yoza olmaydi.
+  ber" desangiz — u videoni yuklaydi, so'ng **video mazmuniga qarab
+  mustaqil ravishda**: eng mos formatni (9:16 Reels/TikTok, 1:1
+  kvadrat post, 16:9 YouTube/landshaft, 4:5 Instagram post), eng mos
+  uslubni (energetik raqamli-belgili, toza-minimalist, yoki
+  kinematik-letterbox), nechta lahza kerakligini (2-6 ta) va har
+  bir lahza uchun ranglarni **o'zi tanlaydi** — bu qattiq bitta
+  shablon emas, har safar boshqacha natija bo'lishi mumkin. Aniq
+  format/uslub xohlasangiz ("kvadrat qilib", "16:9 qilib", "energetik
+  uslubda"), shuni so'rovingizda ayting — tizim shunga amal qiladi.
+  Video faylni to'g'ridan-to'g'ri yuborib ham xuddi shu so'rovni
+  berish mumkin. Bu jarayon 1-3 daqiqa vaqt oladi.
+  **MUHIM**: bu terminal/shell orqali emas, faqat qattiq belgilangan
+  xavfsiz funksiyalar orqali ishlaydi — AI erkin buyruq yoza olmaydi,
+  faqat format/uslub/rang kabi PARAMETRLARNI tanlaydi.
 - **Ovozli xabarlar**: botlarga ovozli xabar yuborsangiz, ular uni
   avtomatik matnga o'girib (Whisper orqali), tushunib, matn holida
   javob qaytaradi.
