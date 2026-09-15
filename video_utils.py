@@ -18,6 +18,7 @@ band bo'lib qolmaydi).
 
 import os
 import re
+import json
 import glob
 import shutil
 import logging
@@ -47,11 +48,43 @@ def _run(cmd: list) -> subprocess.CompletedProcess:
 _cookies_path_cache = None
 
 
+def _cookies_json_to_netscape(data) -> str:
+    """
+    Ba'zi brauzer kengaytmalari cookie'larni Netscape emas, JSON
+    formatida eksport qiladi (masalan Cookie-Editor). Shu funksiya
+    ikkala keng tarqalgan JSON ko'rinishini ({"cookies":[...]} yoki
+    to'g'ridan-to'g'ri [...] ro'yxat) Netscape matn formatiga o'giradi,
+    shunda yt-dlp uni to'g'ri o'qiy oladi.
+    """
+    if isinstance(data, dict) and "cookies" in data:
+        cookies = data["cookies"]
+    elif isinstance(data, list):
+        cookies = data
+    else:
+        return ""
+
+    lines = ["# Netscape HTTP Cookie File", "# Auto-converted from JSON", ""]
+    for c in cookies:
+        domain = c.get("domain", "")
+        name = c.get("name", "")
+        if not domain or not name:
+            continue
+        flag = "TRUE" if domain.startswith(".") else "FALSE"
+        path = c.get("path", "/") or "/"
+        secure = "TRUE" if c.get("secure") else "FALSE"
+        expiration = int(c.get("expirationDate", 0) or 0)
+        value = c.get("value", "")
+        lines.append(f"{domain}\t{flag}\t{path}\t{secure}\t{expiration}\t{name}\t{value}")
+    return "\n".join(lines)
+
+
 def _get_cookies_file():
     """
     YOUTUBE_COOKIES muhit o'zgaruvchisi (Railway Variables) - agar
     berilgan bo'lsa, uni vaqtinchalik faylga yozib, shu faylning
     yo'lini qaytaradi. Bo'lmasa, None qaytaradi (cookiessiz urinadi).
+    Ikkala formatni ham qo'llab-quvvatlaydi: Netscape (.txt) va JSON
+    (avtomatik Netscape'ga o'giriladi).
     """
     global _cookies_path_cache
     if _cookies_path_cache and os.path.exists(_cookies_path_cache):
@@ -60,6 +93,18 @@ def _get_cookies_file():
     content = os.getenv("YOUTUBE_COOKIES")
     if not content:
         return None
+
+    content_stripped = content.strip()
+    if content_stripped.startswith("{") or content_stripped.startswith("["):
+        try:
+            data = json.loads(content_stripped)
+            content = _cookies_json_to_netscape(data)
+        except Exception as e:
+            logger.exception("YOUTUBE_COOKIES JSON'ni o'girishda xatolik: %s", e)
+            return None
+        if not content:
+            logger.error("YOUTUBE_COOKIES JSON'dan hech qanday cookie topilmadi")
+            return None
 
     path = os.path.join(tempfile.gettempdir(), "youtube_cookies.txt")
     with open(path, "w") as f:
