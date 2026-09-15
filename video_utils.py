@@ -154,7 +154,7 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
     }))
     strategies.append(("cookiesiz+standart", {}))
 
-    last_error = None
+    attempt_errors = []
     for name, extra_opts in strategies:
         opts = dict(base_opts)
         opts.update(extra_opts)
@@ -173,8 +173,9 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
                 "duration": info.get("duration", 0),
             }
         except Exception as e:
-            logger.warning("YouTube strategiyasi ishlamadi (%s): %s", name, e)
-            last_error = e
+            short_err = str(e).splitlines()[0][:150]
+            logger.warning("YouTube strategiyasi ishlamadi (%s): %s", name, short_err)
+            attempt_errors.append(f"- {name}: {short_err}")
             continue
 
     # Barcha strategiyalar ishlamadi - QANDAY formatlar mavjudligini
@@ -200,11 +201,15 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
     except Exception as probe_err:
         formats_summary = f"(formatlar ro'yxatini ham olib bo'lmadi: {probe_err})"
 
+    strategies_report = "\n".join(attempt_errors)
     logger.error(
-        "Barcha YouTube strategiyalari ishlamadi. Mavjud formatlar:\n%s",
-        formats_summary,
+        "Barcha YouTube strategiyalari ishlamadi:\n%s\n\nMavjud formatlar:\n%s",
+        strategies_report, formats_summary,
     )
-    raise RuntimeError(f"{last_error}\n\nMavjud formatlar:\n{formats_summary}")
+    raise RuntimeError(
+        f"Barcha 5 usul sinaldi, hech biri ishlamadi:\n{strategies_report}"
+        f"\n\nMavjud formatlar:\n{formats_summary}"
+    )
 
 
 async def download_youtube(url: str, chat_key: str) -> dict:
