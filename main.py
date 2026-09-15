@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 from agents_config import AGENTS
 from bot_worker import build_worker, task_checker_loop, reminder_checker_loop
+import pot_provider
 
 load_dotenv()
 
@@ -58,4 +59,9 @@ async def main():
 
 
 if __name__ == "__main__":
+    # YouTube "PoToken" talabini yengish uchun yordamchi serverni
+    # BOTLAR ishga tushishidan OLDIN, bir martalik tayyorlab qo'yamiz.
+    # (Xato bo'lsa ham dastur davom etadi - shunchaki PoToken'siz.)
+    pot_provider.ensure_pot_provider_running()
+
     asyncio.run(main())

@@ -116,6 +116,12 @@ istalgan vaqt o'zgartirish mumkin.
   **MUHIM**: bu terminal/shell orqali emas, faqat qattiq belgilangan
   xavfsiz funksiyalar orqali ishlaydi — AI erkin buyruq yoza olmaydi,
   faqat format/uslub/rang kabi PARAMETRLARNI tanlaydi.
+  YouTube'ning "bot-himoyasi" (Sign in to confirm...)ni yengish uchun
+  tizim avtomatik ravishda maxsus yordamchi server (PoToken provider)
+  ishga tushiradi — bu birinchi marta ishga tushganda 30-60 soniya
+  qo'shimcha vaqt olishi mumkin, keyingi yuklashlar tezroq bo'ladi.
+  Agar hali ham "sign in" xatosi chiqsa, `YOUTUBE_COOKIES`
+  o'zgaruvchisini sozlash tavsiya etiladi (yuqoridagi bo'limga qarang).
 - **Ovozli xabarlar**: botlarga ovozli xabar yuborsangiz, ular uni
   avtomatik matnga o'girib (Whisper orqali), tushunib, matn holida
   javob qaytaradi.
@@ -174,6 +180,33 @@ a'zo sifatida qo'shilgan bo'lishi kifoya, admin bo'lishi shart emas).
    (Raqamlar — sizning topic ID'laringiz, o'ng tomondagi nom esa
    `agents_config.py`dagi agent kaliti bilan bir xil bo'lishi kerak.)
 5. Commit qiling — Railway avtomatik qayta deploy qiladi.
+
+## YouTube "tizimga kirish" xatosini tuzatish (ixtiyoriy)
+
+Ba'zi YouTube videolarini yuklashda `Please sign in` xatosi chiqishi
+mumkin — bu YouTube'ning bulut-serverlardan (Railway kabi) kelgan
+so'rovlarni "shubhali" deb hisoblab qo'yadigan bot-himoyasi, xatolik
+emas. Buni tuzatish uchun haqiqiy YouTube hisobingizning cookies
+faylini berish kerak:
+
+1. Kompyuteringizda Chrome brauzerida youtube.com'ga kiring (hisobingiz
+   bilan).
+2. Chrome Web Store'dan **"Get cookies.txt LOCALLY"** kengaytmasini
+   o'rnating.
+3. youtube.com sahifasida turib, kengaytma belgisini bosing va
+   "Export" / "Download" tugmasini bosing — `cookies.txt` fayli
+   yuklanadi.
+4. Shu faylni matn muharriri (TextEdit/Notepad) bilan oching, **butun
+   matnini** nusxalab oling.
+5. Railway'da Variables bo'limiga o'ting, yangi o'zgaruvchi qo'shing:
+   `YOUTUBE_COOKIES` — qiymat qismiga nusxalangan matnni to'liq
+   joylashtiring.
+6. Saqlang — Railway avtomatik qayta deploy qiladi. Shundan keyin
+   "tizimga kirish" talab qiladigan videolar ham yuklanishi kerak.
+
+**Eslatma**: cookies faylida sizning YouTube sessiyangiz haqida
+ma'lumot bor — uni hech kim bilan bulashmang, faqat Railway
+Variables'ning o'ziga joylashtiring.
 
 ## Keyingi kuchaytirishlar (ixtiyoriy)
 
