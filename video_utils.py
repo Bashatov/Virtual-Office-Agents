@@ -39,8 +39,24 @@ if not os.path.exists(FONT_FILE):
     FONT_FILE = None
 
 
-def _run(cmd: list) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+def _run(cmd: list, check: bool = True) -> subprocess.CompletedProcess:
+    """
+    ffmpeg/ffprobe buyrug'ini bajaradi. MUHIM: avvalgi versiyada bu
+    yerda xato (returncode != 0) sezilmasdan o'tkazib yuborilar edi -
+    natijada ffmpeg "muvaffaqiyatsiz" bo'lsa ham, bo'sh/buzilgan fayl
+    "tayyor" deb hisoblanib, foydalanuvchiga yuborilib yuborilgan.
+    Endi xato bo'lsa - aniq xabar bilan RuntimeError chiqadi.
+    """
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if check and result.returncode != 0:
+        logger.error(
+            "Buyruq muvaffaqiyatsiz (%s):\nSTDOUT: %s\nSTDERR: %s",
+            " ".join(cmd), result.stdout[-1000:], result.stderr[-1000:],
+        )
+        raise RuntimeError(
+            f"'{cmd[0]}' xato bilan tugadi: {result.stderr.strip()[-500:] or result.stdout.strip()[-500:]}"
+        )
+    return result
 
 
 # ---------- YouTube "cookies" fayli (login talab qiladigan videolar uchun) ----------
@@ -480,18 +496,30 @@ def parse_reel_plan(text: str, video_duration: float) -> dict:
 def _build_reel_sync(src: str, plan: dict, dest_dir: str) -> str:
     width, height = FORMAT_PRESETS.get(plan["format"], FORMAT_PRESETS[DEFAULT_FORMAT])
     segment_paths = []
+    segment_errors = []
     for i, seg in enumerate(plan["segments"], start=1):
         seg_path = os.path.join(dest_dir, f"seg_{i:02d}.mp4")
-        _make_segment(
-            src, seg["timestamp"], seg["duration"], width, height,
-            plan["style"], f"{i:02d}", seg["caption"], plan["title"],
-            seg["accent_color"], seg_path,
-        )
-        if os.path.exists(seg_path):
-            segment_paths.append(seg_path)
+        try:
+            _make_segment(
+                src, seg["timestamp"], seg["duration"], width, height,
+                plan["style"], f"{i:02d}", seg["caption"], plan["title"],
+                seg["accent_color"], seg_path,
+            )
+            # MUHIM: fayl mavjudligi yetarli emas - ffmpeg xato bo'lsa
+            # ham ba'zan bo'sh/juda kichik fayl qoldirishi mumkin.
+            # Shuning uchun hajmini ham tekshiramiz (minimal 10 KB).
+            if os.path.exists(seg_path) and os.path.getsize(seg_path) > 10_000:
+                segment_paths.append(seg_path)
+            else:
+                segment_errors.append(f"segment {i}: fayl yaratilmadi yoki bo'sh")
+        except Exception as e:
+            segment_errors.append(f"segment {i}: {e}")
+            logger.warning("Segment %d yaratilmadi: %s", i, e)
 
     if not segment_paths:
-        raise RuntimeError("Hech qanday segment yaratilmadi")
+        raise RuntimeError(
+            "Hech qanday segment yaratilmadi:\n" + "\n".join(segment_errors)
+        )
 
     concat_list = os.path.join(dest_dir, "concat.txt")
     with open(concat_list, "w") as f:
@@ -503,6 +531,22 @@ def _build_reel_sync(src: str, plan: dict, dest_dir: str) -> str:
         "ffmpeg", "-f", "concat", "-safe", "0", "-i", concat_list,
         "-c", "copy", output_path, "-y", "-loglevel", "error",
     ])
+
+    # Yakuniy faylni ham tekshiramiz - kamida bir necha soniya
+    # davomiylikka ega, real video ekanini tasdiqlaymiz. Aks holda
+    # "muvaffaqiyatli" deb yuborilgan, lekin ochilmaydigan (0:00)
+    # fayl kabi muammoning oldini olamiz.
+    if not os.path.exists(output_path) or os.path.getsize(output_path) < 10_000:
+        raise RuntimeError("Yakuniy video fayli bo'sh yoki yaratilmadi")
+
+    final_info = get_video_info(output_path)
+    if final_info.get("duration", 0) < 1:
+        errors_text = "; ".join(segment_errors) if segment_errors else "yoq"
+        raise RuntimeError(
+            f"Yakuniy video davomiyligi 0 - fayl buzilgan bo'lishi mumkin "
+            f"(segment xatolari: {errors_text})"
+        )
+
     return output_path
 
 
