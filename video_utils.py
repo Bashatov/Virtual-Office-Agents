@@ -42,6 +42,32 @@ def _run(cmd: list) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
 
+# ---------- YouTube "cookies" fayli (login talab qiladigan videolar uchun) ----------
+
+_cookies_path_cache = None
+
+
+def _get_cookies_file():
+    """
+    YOUTUBE_COOKIES muhit o'zgaruvchisi (Railway Variables) - agar
+    berilgan bo'lsa, uni vaqtinchalik faylga yozib, shu faylning
+    yo'lini qaytaradi. Bo'lmasa, None qaytaradi (cookiessiz urinadi).
+    """
+    global _cookies_path_cache
+    if _cookies_path_cache and os.path.exists(_cookies_path_cache):
+        return _cookies_path_cache
+
+    content = os.getenv("YOUTUBE_COOKIES")
+    if not content:
+        return None
+
+    path = os.path.join(tempfile.gettempdir(), "youtube_cookies.txt")
+    with open(path, "w") as f:
+        f.write(content)
+    _cookies_path_cache = path
+    return path
+
+
 # ---------- 1) YouTube'dan video yuklash ----------
 
 def _download_youtube_sync(url: str, dest_dir: str) -> dict:
@@ -54,7 +80,18 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
+        # YouTube bulut-serverlardan kelgan so'rovlarni ko'pincha "bot"
+        # deb hisoblab, "Please sign in" xatosini qaytaradi. Mobil
+        # ilova (android) client'i sifatida so'rov yuborish ko'p
+        # hollarda buni chetlab o'tadi - cookie shart bo'lmasdan.
+        "extractor_args": {
+            "youtube": {"player_client": ["android", "web"]},
+        },
     }
+    cookies_file = _get_cookies_file()
+    if cookies_file:
+        ydl_opts["cookiefile"] = cookies_file
+
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         filepath = ydl.prepare_filename(info)
