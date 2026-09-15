@@ -118,14 +118,11 @@ def _get_cookies_file():
 def _download_youtube_sync(url: str, dest_dir: str) -> dict:
     import yt_dlp
 
-    ydl_opts = {
+    base_opts = {
         "outtmpl": os.path.join(dest_dir, "source.%(ext)s"),
-        # MUHIM: hech qanday cheklov (o'lcham/kengaytma) qo'ymaymiz -
-        # mavjud BO'LGAN ENG YAXSHI video+audio'ni olamiz. O'lchamni
-        # keyinroq o'zimizning ffmpeg bosqichimiz (_make_segment) baribir
-        # kerakli formatga moslaydi, shuning uchun bu yerda cheklash
-        # shart emas va faqat "mos format topilmadi" xatosini keltirib
-        # chiqaradi.
+        # MUHIM: hech qanday o'lcham/kengaytma cheklovi qo'ymaymiz -
+        # mavjud bo'lgan ENG YAXSHISINI olamiz, keyin o'zimizning
+        # ffmpeg bosqichimiz baribir kerakli formatga moslaydi.
         "format": "bestvideo+bestaudio/best",
         "merge_output_format": "mp4",
         "quiet": True,
@@ -133,72 +130,81 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
         "noplaylist": True,
     }
     cookies_file = _get_cookies_file()
+
+    # YouTube tomonidan qo'yiladigan cheklovlar (bot-himoya, PoToken
+    # talabi va h.k.) turli video/hisobda turlicha ishlaydi. Shuning
+    # uchun BITTA qattiq usul o'rniga, bir nechta strategiyani ketma-ket
+    # sinaymiz - birinchi ishlagani qabul qilinadi.
+    strategies = []
     if cookies_file:
-        # MUHIM: cookie (tizimga kirilgan sessiya) bilan ishlaganda,
-        # FAQAT "web" klientini ishlatamiz - "android"/"ios"/"tv"
-        # klientlari cookie-sessiyani to'g'ri boshqarolmay, "The page
-        # needs to be reloaded" kabi xatoliklar berishi mumkin.
-        ydl_opts["cookiefile"] = cookies_file
-        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["web"]}}
-    else:
-        # Cookie yo'q bo'lsa - "bot emasligini" ko'rsatish uchun mobil
-        # klientlar ko'pincha yaxshi ishlaydi (login talab qilmasdan).
-        ydl_opts["extractor_args"] = {
-            "youtube": {"player_client": ["android", "ios", "tv"]},
-        }
+        strategies.append(("cookie+barcha-klientlar", {
+            "cookiefile": cookies_file,
+            "extractor_args": {"youtube": {"player_client": ["android", "ios", "web", "tv"]}},
+        }))
+        strategies.append(("cookie+faqat-web", {
+            "cookiefile": cookies_file,
+            "extractor_args": {"youtube": {"player_client": ["web"]}},
+        }))
+        strategies.append(("cookie+mobil-klientlar", {
+            "cookiefile": cookies_file,
+            "extractor_args": {"youtube": {"player_client": ["android", "ios", "tv"]}},
+        }))
+    strategies.append(("cookiesiz+mobil-klientlar", {
+        "extractor_args": {"youtube": {"player_client": ["android", "ios", "tv"]}},
+    }))
+    strategies.append(("cookiesiz+standart", {}))
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    last_error = None
+    for name, extra_opts in strategies:
+        opts = dict(base_opts)
+        opts.update(extra_opts)
         try:
-            info = ydl.extract_info(url, download=True)
-        except Exception as first_err:
-            # Bizning format tanlovimiz ishlamadi - AVTOMATIK ravishda
-            # hech qanday cheklovsiz ("format" kalitisiz, yt-dlp'ning
-            # o'z standart tanloviga tayanib) qayta urinib ko'ramiz.
-            # Ko'p hollarda bu muammoni darhol hal qiladi.
-            try:
-                retry_opts = dict(ydl_opts)
-                retry_opts.pop("format", None)
-                with yt_dlp.YoutubeDL(retry_opts) as retry_ydl:
-                    info = retry_ydl.extract_info(url, download=True)
-            except Exception as e:
-                # Ikkalasi ham ishlamadi - endi QANDAY formatlar mavjud
-                # ekanini ko'rish uchun (yuklab OLMASDAN) ma'lumot
-                # so'raymiz, shu orqali keyingi safar aniq tuzatish
-                # qilish mumkin bo'ladi.
-                formats_summary = ""
-                try:
-                    probe_opts = dict(ydl_opts)
-                    probe_opts.pop("format", None)  # faqat ro'yxat kerak, tanlov emas
-                    probe_opts["quiet"] = True
-                    with yt_dlp.YoutubeDL(probe_opts) as probe_ydl:
-                        probe_info = probe_ydl.extract_info(url, download=False)
-                    fmts = probe_info.get("formats", []) if probe_info else []
-                    lines = []
-                    for f in fmts[:15]:
-                        lines.append(
-                            f"{f.get('format_id')}: {f.get('ext')} "
-                            f"{f.get('height') or '-'}p "
-                            f"v={f.get('vcodec')} a={f.get('acodec')}"
-                        )
-                    formats_summary = "\n".join(lines)
-                except Exception as probe_err:
-                    formats_summary = f"(formatlar ro'yxatini ham olib bo'lmadi: {probe_err})"
-                logger.error(
-                    "YouTube format xatosi. Mavjud formatlar:\n%s", formats_summary
-                )
-                raise RuntimeError(f"{e}\n\nMavjud formatlar:\n{formats_summary}") from e
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+            filepath = ydl.prepare_filename(info)
+            if not os.path.exists(filepath):
+                candidates = glob.glob(os.path.join(dest_dir, "source.*"))
+                if candidates:
+                    filepath = candidates[0]
+            logger.info("YouTube yuklandi (%s strategiyasi orqali)", name)
+            return {
+                "path": filepath,
+                "title": info.get("title", "Video"),
+                "duration": info.get("duration", 0),
+            }
+        except Exception as e:
+            logger.warning("YouTube strategiyasi ishlamadi (%s): %s", name, e)
+            last_error = e
+            continue
 
-        filepath = ydl.prepare_filename(info)
-        # merge_output_format ba'zan kengaytmani o'zgartiradi
-        if not os.path.exists(filepath):
-            candidates = glob.glob(os.path.join(dest_dir, "source.*"))
-            if candidates:
-                filepath = candidates[0]
-        return {
-            "path": filepath,
-            "title": info.get("title", "Video"),
-            "duration": info.get("duration", 0),
-        }
+    # Barcha strategiyalar ishlamadi - QANDAY formatlar mavjudligini
+    # (agar umuman bo'lsa) ko'rish uchun oxirgi bor "faqat ro'yxat"
+    # so'raymiz, shuni xato xabariga qo'shamiz.
+    formats_summary = ""
+    try:
+        probe_opts = dict(base_opts)
+        probe_opts.pop("format", None)
+        probe_opts["quiet"] = True
+        with yt_dlp.YoutubeDL(probe_opts) as probe_ydl:
+            probe_info = probe_ydl.extract_info(url, download=False)
+        fmts = probe_info.get("formats", []) if probe_info else []
+        if fmts:
+            lines = [
+                f"{f.get('format_id')}: {f.get('ext')} {f.get('height') or '-'}p "
+                f"v={f.get('vcodec')} a={f.get('acodec')}"
+                for f in fmts[:15]
+            ]
+            formats_summary = "\n".join(lines)
+        else:
+            formats_summary = "(YouTube hech qanday format qaytarmadi - bu odatda cookie eskirgani yoki hisob qo'shimcha tekshiruv talab qilayotganining belgisi)"
+    except Exception as probe_err:
+        formats_summary = f"(formatlar ro'yxatini ham olib bo'lmadi: {probe_err})"
+
+    logger.error(
+        "Barcha YouTube strategiyalari ishlamadi. Mavjud formatlar:\n%s",
+        formats_summary,
+    )
+    raise RuntimeError(f"{last_error}\n\nMavjud formatlar:\n{formats_summary}")
 
 
 async def download_youtube(url: str, chat_key: str) -> dict:
