@@ -75,22 +75,23 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
 
     ydl_opts = {
         "outtmpl": os.path.join(dest_dir, "source.%(ext)s"),
-        # MUHIM: qattiq "faqat mp4/m4a" talabini qo'ymaymiz - ba'zi
-        # klientlar (masalan 'android') uchun YouTube boshqacha
-        # (masalan webm) formatlarni qaytarishi mumkin. merge_output_format
-        # baribir yakuniy faylni mp4'ga o'giradi, shuning uchun bu yerda
-        # imkon qadar KENG (moslashuvchan) tanlov qoldiramiz.
-        "format": "bv*[height<=1080]+ba/b[height<=1080]/best",
+        # MUHIM: hech qanday cheklov (o'lcham/kengaytma) qo'ymaymiz -
+        # mavjud BO'LGAN ENG YAXSHI video+audio'ni olamiz. O'lchamni
+        # keyinroq o'zimizning ffmpeg bosqichimiz (_make_segment) baribir
+        # kerakli formatga moslaydi, shuning uchun bu yerda cheklash
+        # shart emas va faqat "mos format topilmadi" xatosini keltirib
+        # chiqaradi.
+        "format": "bestvideo+bestaudio/best",
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
         # YouTube bulut-serverlardan kelgan so'rovlarni ko'pincha "bot"
-        # deb hisoblab, "Please sign in" xatosini qaytaradi. Mobil
-        # ilova (android) client'i sifatida so'rov yuborish ko'p
-        # hollarda buni chetlab o'tadi - cookie shart bo'lmasdan.
+        # deb hisoblab, "Please sign in" xatosini qaytaradi. Bir nechta
+        # klient turini birga so'rash - formatlar ro'yxati ham kengroq
+        # bo'ladi, ham "sign in" ehtimoli kamayadi.
         "extractor_args": {
-            "youtube": {"player_client": ["android", "web"]},
+            "youtube": {"player_client": ["android", "ios", "web", "tv"]},
         },
     }
     cookies_file = _get_cookies_file()
