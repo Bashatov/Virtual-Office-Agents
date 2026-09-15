@@ -23,6 +23,10 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+# httpx har bir Telegram so'rovini ("getUpdates" va h.k.) INFO darajasida
+# yozib, loglarni "shovqin"ga to'ldiradi - shuni jimlantiramiz, shunda
+# faqat haqiqiy xato/ogohlantirishlar ko'rinadi.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("main")
 
 
