@@ -169,15 +169,30 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
     # HAR SAFAR tekshirib, logga aniq yozib qo'yamiz. Shu orqali
     # "sozlama noto'g'ri/server ishlamayapti" bilan "PoToken baribir
     # yordam bermayapti" holatlarini bir-biridan ajratamiz.
+    #
+    # MUHIM: HTTP xato kodi (masalan 400/404) - bu ULANISH
+    # MUVAFFAQIYATLI bo'lganini bildiradi (server javob berdi!), u
+    # shunchaki bizning test-so'rovimiz formatini "tushunmadi". Faqat
+    # ConnectionError/Timeout kabi haqiqiy ulanish xatosigina server
+    # ISHLAMAYAPTI degani.
     if pot_url:
+        import urllib.request
+        import urllib.error
         try:
-            import urllib.request
             req = urllib.request.Request(pot_url, method="GET")
             with urllib.request.urlopen(req, timeout=5) as resp:
                 logger.info(
                     "✅ PoToken serveriga ulanish OK (%s) - javob kodi: %s",
                     pot_url, resp.status,
                 )
+        except urllib.error.HTTPError as e:
+            # Server javob berdi (HTTP xato bo'lsa ham) - demak ULANISH BOR.
+            logger.info(
+                "✅ PoToken serveriga ulanish OK (%s) - server javob berdi "
+                "(HTTP %s, bu normal - server shunchaki GET so'rovini "
+                "kutmagan bo'lishi mumkin).",
+                pot_url, e.code,
+            )
         except Exception as e:
             logger.error(
                 "❌ PoToken serveriga ULANIB BO'LMADI (%s): %s. "
