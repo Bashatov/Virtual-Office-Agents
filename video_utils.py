@@ -148,7 +148,35 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
         }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
+        try:
+            info = ydl.extract_info(url, download=True)
+        except Exception as e:
+            # "Requested format is not available" xatosi chiqsa -
+            # aynan QANDAY formatlar mavjudligini ko'rish uchun,
+            # yuklab OLMASDAN faqat ma'lumot so'raymiz - shu orqali
+            # keyingi safar aniq tuzatish qilish mumkin bo'ladi.
+            formats_summary = ""
+            try:
+                probe_opts = dict(ydl_opts)
+                probe_opts["quiet"] = True
+                with yt_dlp.YoutubeDL(probe_opts) as probe_ydl:
+                    probe_info = probe_ydl.extract_info(url, download=False)
+                fmts = probe_info.get("formats", []) if probe_info else []
+                lines = []
+                for f in fmts[:15]:
+                    lines.append(
+                        f"{f.get('format_id')}: {f.get('ext')} "
+                        f"{f.get('height') or '-'}p "
+                        f"v={f.get('vcodec')} a={f.get('acodec')}"
+                    )
+                formats_summary = "\n".join(lines)
+            except Exception:
+                formats_summary = "(formatlar ro'yxatini ham olib bo'lmadi)"
+            logger.error(
+                "YouTube format xatosi. Mavjud formatlar:\n%s", formats_summary
+            )
+            raise RuntimeError(f"{e}\n\nMavjud formatlar:\n{formats_summary}") from e
+
         filepath = ydl.prepare_filename(info)
         # merge_output_format ba'zan kengaytmani o'zgartiradi
         if not os.path.exists(filepath):
