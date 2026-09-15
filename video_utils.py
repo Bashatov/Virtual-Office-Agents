@@ -61,12 +61,24 @@ def _run(cmd: list, check: bool = True, timeout: int = 120) -> subprocess.Comple
         ) from e
 
     if check and result.returncode != 0:
+        # MUHIM: agar returncode MANFIY bo'lsa (masalan -9), bu process
+        # signal orqali MAJBURAN o'ldirilganini bildiradi (odatda -9 =
+        # SIGKILL = xotira yetishmasligi/OOM). Bo'sh STDOUT/STDERR bilan
+        # birga kelsa, bu deyarli har doim OOM ekanining aniq belgisi.
+        signal_note = ""
+        if result.returncode < 0:
+            signal_note = (
+                f" [MUHIM: signal {-result.returncode} orqali o'ldirilgan - "
+                "ehtimol XOTIRA YETISHMASLIGI (OOM), ffmpeg xatosi emas]"
+            )
         logger.error(
-            "Buyruq muvaffaqiyatsiz (%s):\nSTDOUT: %s\nSTDERR: %s",
-            " ".join(cmd), result.stdout[-1000:], result.stderr[-1000:],
+            "Buyruq muvaffaqiyatsiz (kod=%s%s) (%s):\nSTDOUT: %s\nSTDERR: %s",
+            result.returncode, signal_note, " ".join(cmd),
+            result.stdout[-1000:], result.stderr[-1000:],
         )
         raise RuntimeError(
-            f"'{cmd[0]}' xato bilan tugadi: {result.stderr.strip()[-500:] or result.stdout.strip()[-500:]}"
+            f"'{cmd[0]}' xato bilan tugadi (kod={result.returncode}){signal_note}: "
+            f"{result.stderr.strip()[-500:] or result.stdout.strip()[-500:] or '(chiqish bo`sh)'}"
         )
     return result
 
@@ -484,7 +496,13 @@ def _make_segment(src: str, start: float, duration: float, width: int,
     _run([
         "ffmpeg", "-ss", str(max(0, start)), "-t", str(duration), "-i", src,
         "-vf", filters,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        # MUHIM: "ultrafast" preset va "-threads 2" - xotira/protsessor
+        # sarfini kamaytiradi (Railway'ning cheklangan resurslarida
+        # ffmpeg'ning "OOM" - xotira yetishmasligi tufayli o'ldirilishini
+        # oldini olish uchun). Fayl hajmi biroz kattaroq bo'lishi mumkin,
+        # lekin bu qisqa (3-12s) segmentlar uchun muhim emas.
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+        "-threads", "2",
         "-c:a", "aac", "-r", "30", out_path, "-y", "-loglevel", "error",
     ])
 
