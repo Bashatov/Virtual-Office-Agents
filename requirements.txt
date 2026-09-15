@@ -8,3 +8,5 @@ python-docx==1.1.2
 pypdf==4.3.1
 reportlab==4.2.5
 beautifulsoup4==4.12.3
+yt-dlp==2024.8.6
+Pillow==10.4.0

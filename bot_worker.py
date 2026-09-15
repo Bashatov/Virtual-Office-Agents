@@ -51,6 +51,7 @@ from llm_client import (
 )
 import file_utils
 import web_utils
+import video_utils
 import db
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,8 @@ SCHEDULE_REMINDER_RE = re.compile(
     r"\[SCHEDULE_REMINDER:(\w+):(\w+):(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]\s*(.+)",
     re.DOTALL,
 )
+DOWNLOAD_YOUTUBE_RE = re.compile(r"\[DOWNLOAD_YOUTUBE\]\s*(\S+)")
+CREATE_REEL_RE = re.compile(r"\[CREATE_REEL\]\s*(.+)", re.DOTALL)
 
 GROUP_TYPES = ("group", "supergroup")
 
@@ -481,6 +484,100 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     logger.exception("Eslatma rejalashtirishda xatolik: %s", e)
                     visible_reply += "\n\n⚠️ Eslatmani rejalashtirishda xatolik yuz berdi."
 
+        # f) YouTube'dan video yuklash (faqat Mobilograf)
+        yt_match = DOWNLOAD_YOUTUBE_RE.search(reply)
+        if yt_match:
+            youtube_url = yt_match.group(1).strip()
+            visible_reply = reply[: yt_match.start()].strip()
+
+            chat_key = f"{agent_key}_{chat_id}"
+            result = await video_utils.download_youtube(youtube_url, chat_key)
+            if result.get("error"):
+                visible_reply += (
+                    f"\n\n⚠️ Videoni yuklab bo'lmadi: {result['error']}"
+                )
+            else:
+                db.save_last_video(
+                    agent_key, chat_id, result["path"],
+                    result.get("title", ""), result.get("duration", 0),
+                )
+                dur_min = int(result.get("duration", 0)) // 60
+                dur_sec = int(result.get("duration", 0)) % 60
+                visible_reply += (
+                    f"\n\n✅ Video yuklandi: \"{result.get('title', '')}\"\n"
+                    f"Davomiyligi: {dur_min} daqiqa {dur_sec} soniya.\n"
+                    "Endi shundan qiziqarli-kadrlar videosi (reel) "
+                    "yaratishimni xohlasangiz, ayting."
+                )
+
+        # g) Yuklangan/yuborilgan videodan "reel" yaratish (faqat Mobilograf)
+        reel_match = CREATE_REEL_RE.search(reply)
+        if reel_match:
+            overall_title = reel_match.group(1).strip().splitlines()[0][:60]
+            visible_reply = reply[: reel_match.start()].strip()
+
+            last_video = db.get_last_video(agent_key, chat_id)
+            if not last_video or not os.path.exists(last_video.get("local_path", "")):
+                visible_reply += (
+                    "\n\n⚠️ Ishlanadigan video topilmadi - avval YouTube "
+                    "havolasini yuboring yoki video faylni to'g'ridan-to'g'ri "
+                    "yuboring."
+                )
+            else:
+                await update.message.reply_text(
+                    "🎬 Video tahlil qilinmoqda va reel tayyorlanmoqda "
+                    "(1-3 daqiqa vaqt olishi mumkin)..."
+                )
+                try:
+                    src_path = last_video["local_path"]
+                    chat_key = f"{agent_key}_{chat_id}"
+                    info = video_utils.get_video_info(src_path)
+
+                    frames = await video_utils.extract_candidate_frames(
+                        src_path, os.path.dirname(src_path), count=8
+                    )
+                    sheet_bytes = video_utils.build_contact_sheet(frames)
+
+                    vision_response = analyze_image(
+                        cfg["provider"], cfg["model"], sheet_bytes,
+                        "Bu - videodan olingan kadrlar to'plami (chap "
+                        "yuqoridan o'ngga, yuqoridan pastga vaqt tartibida). "
+                        "Video davomiyligi: " + str(int(info.get("duration", 0)))
+                        + " soniya. Shu kadrlar orasidan ENG QIZIQARLI 3 "
+                        "tasini tanla. Har biri uchun taxminiy vaqtini "
+                        "(kadr tartib raqamidan hisoblab) va qisqa "
+                        "o'zbekcha sarlavha (2-3 so'z) ber. Faqat shu "
+                        "formatda javob ber, boshqa hech narsa yozma:\n"
+                        "MM:SS | Sarlavha\nMM:SS | Sarlavha\nMM:SS | Sarlavha",
+                    )
+                    highlights = video_utils.parse_highlights_response(
+                        vision_response, info.get("duration", 30)
+                    )
+
+                    output_path = await video_utils.build_highlight_reel(
+                        src_path, highlights, overall_title,
+                        os.path.dirname(src_path),
+                    )
+
+                    await _send_with_retry(
+                        context.bot.send_video,
+                        chat_id=chat_id,
+                        video=InputFile(output_path),
+                        message_thread_id=origin_thread_id,
+                        caption=f"🎬 {overall_title}",
+                    )
+                    captions_list = "\n".join(
+                        f"{i}. {h['caption']}" for i, h in enumerate(highlights, 1)
+                    )
+                    visible_reply += (
+                        f"\n\n✅ Reel tayyor va yuborildi!\nIchidagi kadrlar:\n"
+                        f"{captions_list}"
+                    )
+                    video_utils.cleanup(chat_key)
+                except Exception as e:
+                    logger.exception("Reel yaratishda xatolik: %s", e)
+                    visible_reply += "\n\n⚠️ Reel yaratishda xatolik yuz berdi."
+
         db.save_message(agent_key, chat_id, "assistant", visible_reply)
         await update.message.reply_text(visible_reply)
 
@@ -626,12 +723,42 @@ def build_worker(agent_key: str, bots: dict) -> Application:
         if not await is_addressed(update, context):
             return
 
+        video = update.message.video
+        chat_id = update.effective_chat.id
+
+        if agent_key == "mobilograf":
+            # Mobilograf uchun: to'liq videoni yuklab, keyinchalik
+            # "reel yarat" so'ralganda ishlatish uchun saqlab qo'yamiz.
+            await update.message.reply_text(
+                "🎬 Video qabul qilindi va yuklanmoqda..."
+            )
+            chat_key = f"{agent_key}_{chat_id}"
+            dest_dir = os.path.join(video_utils.MEDIA_DIR, chat_key)
+            os.makedirs(dest_dir, exist_ok=True)
+            local_path = os.path.join(dest_dir, "source.mp4")
+
+            tg_file = await video.get_file()
+            await tg_file.download_to_drive(local_path)
+            db.save_last_video(
+                agent_key, chat_id, local_path,
+                update.message.caption or "Yuborilgan video",
+                video.duration or 0,
+            )
+            user_text = (
+                f"[Foydalanuvchi video fayl yubordi, davomiyligi "
+                f"~{video.duration or 0} soniya. Video muvaffaqiyatli "
+                f"yuklab olindi va reel yaratishga tayyor.]\n\n"
+                f"Foydalanuvchi izohi: {update.message.caption or '(yo`q)'}"
+            )
+            await process_user_text(chat_id, user_text, update, context)
+            return
+
+        # Boshqa agentlar uchun: avvalgidek faqat asosiy kadr tahlili
         await update.message.reply_text(
             "🎬 Video qabul qilindi. Eslatma: hozircha videoning to'liq "
             "davomida emas, faqat asosiy kadridan tahlil qilaman..."
         )
 
-        video = update.message.video
         description = ""
         if video.thumbnail:
             tg_file = await video.thumbnail.get_file()

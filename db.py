@@ -282,3 +282,23 @@ def get_last_photo(agent_key: str, chat_id: int):
     db = get_db()
     doc = db.last_photos.find_one({"agent": agent_key, "chat_id": chat_id})
     return doc["file_id"] if doc else None
+
+
+# ---------- Oxirgi yuborilgan/yuklangan video (reel yaratish uchun) ----------
+
+def save_last_video(agent_key: str, chat_id: int, local_path: str,
+                     title: str = "", duration: float = 0):
+    db = get_db()
+    db.last_videos.update_one(
+        {"agent": agent_key, "chat_id": chat_id},
+        {"$set": {
+            "local_path": local_path, "title": title, "duration": duration,
+            "ts": datetime.datetime.utcnow(),
+        }},
+        upsert=True,
+    )
+
+
+def get_last_video(agent_key: str, chat_id: int):
+    db = get_db()
+    return db.last_videos.find_one({"agent": agent_key, "chat_id": chat_id})

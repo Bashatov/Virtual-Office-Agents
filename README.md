@@ -60,7 +60,10 @@ istalgan vaqt o'zgartirish mumkin.
    API kalitlar, MONGODB_URI, GROUP_CHAT_ID).
 5. Railway avtomatik `Procfile`ni o'qib, `python main.py` orqali botni
    ishga tushiradi. Bir necha daqiqadan so'ng barcha 6 ta bot onlayn
-   bo'ladi.
+   bo'ladi. `nixpacks.toml` fayli tufayli Railway avtomatik `ffmpeg`
+   va shriftlarni ham o'rnatadi (video montaj funksiyasi uchun) —
+   bu bosqich birinchi deploy'da 1-2 daqiqa qo'shimcha vaqt olishi
+   mumkin, alohida sozlash shart emas.
 
 ## Qanday ishlaydi
 
@@ -97,6 +100,16 @@ istalgan vaqt o'zgartirish mumkin.
   Facebook, TikTok, YouTube, Twitter/X kabi saytlar bundan mustasno —
   ular login/JavaScript talab qilgani uchun ochilmaydi; bunday
   holatlarda faylni/rasmni/videoni to'g'ridan-to'g'ri yuklab yuboring.
+- **YouTube'dan qiziqarli-kadrlar videosi (faqat Mobilograf)**:
+  Mobilografga YouTube havolasini yuborib "buni yuklab, reel qilib "
+  ber" desangiz — u videoni yuklaydi, AI vision orqali eng qiziqarli
+  3 ta kadrni tanlaydi, professional dizaynli (raqamli belgi +
+  sarlavha) 9:16 formatdagi qisqa videoni yig'ib, to'g'ridan-to'g'ri
+  yuboradi. Video faylni to'g'ridan-to'g'ri yuborib ham xuddi shu
+  so'rovni berish mumkin. Bu jarayon 1-3 daqiqa vaqt oladi.
+  **MUHIM**: bu terminal/shell orqali emas, faqat ikkita qattiq
+  belgilangan xavfsiz funksiya orqali ishlaydi — AI erkin buyruq
+  yoza olmaydi.
 - **Ovozli xabarlar**: botlarga ovozli xabar yuborsangiz, ular uni
   avtomatik matnga o'girib (Whisper orqali), tushunib, matn holida
   javob qaytaradi.

@@ -121,6 +121,21 @@ SCHEDULE_REMINDER_RULE = (
     "tasdiqlab qo'y."
 )
 
+VIDEO_EDITING_RULE = (
+    "\nVIDEO MONTAJ QOIDASI (faqat sen - Mobilograf uchun):\n"
+    "Agar foydalanuvchi YouTube havolasini yuborib, uni yuklab olishni "
+    "so'rasa, javobing OXIRIDA yoz:\n"
+    "[DOWNLOAD_YOUTUBE] <havola>\n\n"
+    "Video yuklangach (yoki foydalanuvchi to'g'ridan-to'g'ri video "
+    "fayl yuborgach) va undan Instagram/TikTok uchun qiziqarli-kadrlar "
+    "videosi (9:16, vertikal) yaratishni so'rasa, javobing OXIRIDA yoz:\n"
+    "[CREATE_REEL] <umumiy sarlavha (KATTA HARFLAR bilan, qisqa)>\n"
+    "Tizim o'zi eng qiziqarli 3 ta kadrni video tahlili orqali tanlab, "
+    "professional dizaynli (raqamli belgi + sarlavha panel) 9:16 "
+    "formatdagi videoni yig'ib, yuboradi. Bu jarayon 1-3 daqiqa vaqt "
+    "olishi mumkinligini foydalanuvchiga oldindan ayt."
+)
+
 
 AGENTS = {
     "direktor": {
@@ -189,9 +204,11 @@ AGENTS = {
         "system_prompt": (
             "Sen video-prodyuser va ssenariy yozuvchisan. Vazifang: qisqa "
             "reklama/kontent videolar uchun ssenariy (sahna-sahna), syomka "
-            "rejasi va davomiyligini yozib berish.\n\n"
+            "rejasi va davomiyligini yozib berish. Bundan tashqari, "
+            "haqiqiy video fayllar bilan ishlab, ulardan avtomatik "
+            "qiziqarli-kadrlar videosi yarata olasan.\n\n"
             + PROFESSIONALISM_RULE + HUMAN_INTERACTION_RULE + FILE_CREATION_RULE
-            + IMAGE_CREATION_RULE + SCHEDULE_REMINDER_RULE
+            + IMAGE_CREATION_RULE + SCHEDULE_REMINDER_RULE + VIDEO_EDITING_RULE
         ),
     },
     "moliya": {
