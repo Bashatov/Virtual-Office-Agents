@@ -131,17 +131,21 @@ def _download_youtube_sync(url: str, dest_dir: str) -> dict:
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        # YouTube bulut-serverlardan kelgan so'rovlarni ko'pincha "bot"
-        # deb hisoblab, "Please sign in" xatosini qaytaradi. Bir nechta
-        # klient turini birga so'rash - formatlar ro'yxati ham kengroq
-        # bo'ladi, ham "sign in" ehtimoli kamayadi.
-        "extractor_args": {
-            "youtube": {"player_client": ["android", "ios", "web", "tv"]},
-        },
     }
     cookies_file = _get_cookies_file()
     if cookies_file:
+        # MUHIM: cookie (tizimga kirilgan sessiya) bilan ishlaganda,
+        # FAQAT "web" klientini ishlatamiz - "android"/"ios"/"tv"
+        # klientlari cookie-sessiyani to'g'ri boshqarolmay, "The page
+        # needs to be reloaded" kabi xatoliklar berishi mumkin.
         ydl_opts["cookiefile"] = cookies_file
+        ydl_opts["extractor_args"] = {"youtube": {"player_client": ["web"]}}
+    else:
+        # Cookie yo'q bo'lsa - "bot emasligini" ko'rsatish uchun mobil
+        # klientlar ko'pincha yaxshi ishlaydi (login talab qilmasdan).
+        ydl_opts["extractor_args"] = {
+            "youtube": {"player_client": ["android", "ios", "tv"]},
+        }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
