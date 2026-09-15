@@ -646,16 +646,48 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             return
 
         user_text = update.message.text
+        chat_id = update.effective_chat.id
         urls = web_utils.find_urls(user_text)
         if urls:
             for url in urls[:2]:  # ko'pi bilan 2 ta havola
-                # MUHIM: Mobilograf YouTube havolalarini o'zi (yt-dlp
-                # orqali) yuklab ola oladi - shuning uchun unga "bu
-                # saytni ochib bo'lmaydi" degan bloklash xabarini
-                # KO'RSATMAYMIZ, aks holda u urinib ko'rmasdan voz
-                # kechishi mumkin.
+                # MUHIM: Mobilograf uchun YouTube havolasi kelsa, AI
+                # "urinib ko'rish kerakmi" deb o'zi hal qilishiga
+                # QOLDIRMAYMIZ (u ba'zan suhbat tarixiga qarab, haqiqiy
+                # urinishsiz voz kechishi mumkin edi). Buning o'rniga
+                # tizim MAJBURIY ravishda, har safar, haqiqiy yuklash
+                # urinishini o'zi amalga oshiradi va NATIJANI (muvaffaqiyat
+                # yoki aniq xato) to'g'ridan-to'g'ri AI kontekstiga beradi.
                 if agent_key == "mobilograf" and web_utils.is_youtube_url(url):
+                    await update.message.reply_text(
+                        "🎬 YouTube havolasi aniqlandi, yuklab olishga "
+                        "harakat qilyapman..."
+                    )
+                    chat_key = f"{agent_key}_{chat_id}"
+                    result = await video_utils.download_youtube(url, chat_key)
+                    if "error" in result:
+                        user_text += (
+                            f"\n\n[TIZIM: {url} havolasini yuklashga "
+                            f"HOZIRGINA haqiqiy urinish qilindi va XATO "
+                            f"chiqdi:\n{result['error']}\n"
+                            "Bu ANIQ, YANGI natija - eski xotiraga emas, "
+                            "shu xato matniga tayanib javob ber.]"
+                        )
+                    else:
+                        db.save_last_video(
+                            agent_key, chat_id, result["path"],
+                            result.get("title", "Video"),
+                        )
+                        user_text += (
+                            f"\n\n[TIZIM: {url} havolasi HOZIRGINA "
+                            f"muvaffaqiyatli yuklandi. Sarlavha: "
+                            f"{result.get('title', '-')}, davomiyligi: "
+                            f"{int(result.get('duration', 0))} soniya. "
+                            "Endi foydalanuvchidan reel formatini/uslubini "
+                            "so'rab, CREATE_REEL tegini ishlatishing mumkin.]"
+                        )
                     continue
+
+                # Boshqa (YouTube bo'lmagan) havolalar uchun oddiy o'qish:
                 page_content = web_utils.fetch_url_text(url)
                 user_text += f"\n\n[Havola tarkibi - {url}]:\n{page_content}"
 
