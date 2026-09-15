@@ -493,9 +493,17 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             chat_key = f"{agent_key}_{chat_id}"
             result = await video_utils.download_youtube(youtube_url, chat_key)
             if result.get("error"):
-                visible_reply += (
-                    f"\n\n⚠️ Videoni yuklab bo'lmadi: {result['error']}"
-                )
+                err = result["error"]
+                if "sign in" in err.lower() or "sign-in" in err.lower():
+                    visible_reply += (
+                        "\n\n⚠️ YouTube bu videoni yuklashdan oldin "
+                        "\"tizimga kirish\" tasdig'ini talab qilmoqda "
+                        "(bu YouTube'ning bot-himoyasi, xatolik emas). "
+                        "Buni tuzatish uchun YOUTUBE_COOKIES sozlamasini "
+                        "qo'shish kerak - operatoringizdan so'rang."
+                    )
+                else:
+                    visible_reply += f"\n\n⚠️ Videoni yuklab bo'lmadi: {err}"
             else:
                 db.save_last_video(
                     agent_key, chat_id, result["path"],
@@ -641,6 +649,13 @@ def build_worker(agent_key: str, bots: dict) -> Application:
         urls = web_utils.find_urls(user_text)
         if urls:
             for url in urls[:2]:  # ko'pi bilan 2 ta havola
+                # MUHIM: Mobilograf YouTube havolalarini o'zi (yt-dlp
+                # orqali) yuklab ola oladi - shuning uchun unga "bu
+                # saytni ochib bo'lmaydi" degan bloklash xabarini
+                # KO'RSATMAYMIZ, aks holda u urinib ko'rmasdan voz
+                # kechishi mumkin.
+                if agent_key == "mobilograf" and web_utils.is_youtube_url(url):
+                    continue
                 page_content = web_utils.fetch_url_text(url)
                 user_text += f"\n\n[Havola tarkibi - {url}]:\n{page_content}"
 

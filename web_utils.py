@@ -30,6 +30,10 @@ def find_urls(text: str) -> list[str]:
     return URL_RE.findall(text or "")
 
 
+def is_youtube_url(url: str) -> bool:
+    return "youtube.com" in url or "youtu.be" in url
+
+
 def fetch_url_text(url: str) -> str:
     for domain in BLOCKED_DOMAINS:
         if domain in url:
