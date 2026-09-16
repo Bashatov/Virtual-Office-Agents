@@ -601,7 +601,15 @@ def _build_reel_sync(src: str, plan: dict, dest_dir: str) -> str:
     output_path = os.path.join(dest_dir, "reel_final.mp4")
     _run([
         "ffmpeg", "-f", "concat", "-safe", "0", "-i", concat_list,
-        "-c", "copy", "-movflags", "+faststart",
+        # MUHIM: "-c copy" (qayta kodlamasdan yopishtirish) o'rniga
+        # TO'LIQ qayta kodlaymiz. Alohida segmentlarni faqat "yopishtirish"
+        # ba'zan Telegram/brauzer pleyerlari to'g'ri o'qiy olmaydigan ichki
+        # tuzilishga olib kelishi mumkin (davomiylik to'g'ri ko'rinsa ham,
+        # video "yuklanish"da qolib, hech qachon ochilmaydi). To'liq qayta
+        # kodlash BITTA, izchil, har qanday pleyer o'qiy oladigan oqim beradi.
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+        "-pix_fmt", "yuv420p", "-threads", "2",
+        "-c:a", "aac", "-movflags", "+faststart",
         output_path, "-y", "-loglevel", "error",
     ])
 
