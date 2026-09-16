@@ -318,7 +318,16 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             await _send_with_retry(
                 context.bot.send_video,
                 chat_id=chat_id,
-                video=InputFile(output_path),
+                # MUHIM: InputFile(output_path) ISHLATMAYMIZ - InputFile
+                # ochiq fayl-obyekti (masalan io.BytesIO) kutadi, yo'l
+                # (matn) emas. Yo'lni InputFile'ga bersak, u yo'l MATNINI
+                # o'zini "fayl mazmuni" deb yuborib yuborar edi (aynan shu
+                # sababdan Telegram'da video "60 bayt" bo'lib ko'ringan -
+                # bu haqiqiy video emas, yo'l matnining o'zi edi!). Fayl
+                # yo'lini TO'G'RIDAN-TO'G'RI (matn sifatida) berish - PTB
+                # buni o'zi to'g'ri ochib o'qiydi, va qayta urinish (retry)
+                # bo'lganda ham har safar yangidan ochiladi.
+                video=output_path,
                 message_thread_id=origin_thread_id,
                 caption=f"🎬 {plan['title']}",
                 duration=int(final_info.get("duration") or 0) or None,
@@ -760,27 +769,39 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                     chat_key = f"{agent_key}_{chat_id}_{uuid.uuid4().hex[:8]}"
                     result = await video_utils.download_youtube(url, chat_key)
                     if "error" in result:
-                        user_text += (
-                            f"\n\n[TIZIM: {url} havolasini yuklashga "
-                            f"HOZIRGINA haqiqiy urinish qilindi va XATO "
-                            f"chiqdi:\n{result['error']}\n"
-                            "Bu ANIQ, YANGI natija - eski xotiraga emas, "
-                            "shu xato matniga tayanib javob ber.]"
+                        error_text = (
+                            f"⚠️ {url} havolasini yuklab bo'lmadi:\n"
+                            f"{result['error']}"
                         )
-                    else:
-                        db.save_last_video(
-                            agent_key, chat_id, result["path"],
-                            result.get("title", "Video"),
-                        )
-                        user_text += (
-                            f"\n\n[TIZIM: {url} havolasi HOZIRGINA "
-                            f"muvaffaqiyatli yuklandi. Sarlavha: "
-                            f"{result.get('title', '-')}, davomiyligi: "
-                            f"{int(result.get('duration', 0))} soniya. "
-                            "Endi foydalanuvchidan reel formatini/uslubini "
-                            "so'rab, CREATE_REEL tegini ishlatishing mumkin.]"
-                        )
-                    continue
+                        db.save_message(agent_key, chat_id, "assistant", error_text)
+                        await update.message.reply_text(error_text)
+                        return
+
+                    db.save_last_video(
+                        agent_key, chat_id, result["path"],
+                        result.get("title", "Video"), result.get("duration", 0),
+                    )
+                    # MUHIM: bu yerdan keyin process_user_text (LLM)ga
+                    # MUROJAAT QILMAYMIZ va CREATE_REEL tegiga
+                    # TAYANMAYMIZ - to'g'ridan-to'g'ri yuklashda bo'lgani
+                    # kabi, AI ba'zan "kutib turing" deb yozib, texnik
+                    # tegni QO'SHISHNI unutishi kuzatilgan edi. Reel
+                    # yaratish endi MAJBURIY va bevosita ishga tushadi.
+                    await update.message.reply_text(
+                        f"✅ Video yuklandi: {result.get('title', '-')}. "
+                        "Eng mos format/uslub tanlab, reel yasashga "
+                        "o'taman (1-3 daqiqa vaqt olishi mumkin)..."
+                    )
+                    origin_thread_id = getattr(update.message, "message_thread_id", None)
+                    user_hint = user_text.replace(url, "").strip()
+                    result_text = await run_reel_pipeline(
+                        chat_id, result["path"], user_hint,
+                        context, origin_thread_id,
+                    )
+                    result_text = result_text.strip() or "✅ Tayyor."
+                    db.save_message(agent_key, chat_id, "assistant", result_text)
+                    await update.message.reply_text(result_text)
+                    return
 
                 # Boshqa (YouTube bo'lmagan) havolalar uchun oddiy o'qish:
                 page_content = web_utils.fetch_url_text(url)
