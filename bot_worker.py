@@ -714,7 +714,18 @@ def build_worker(agent_key: str, bots: dict) -> Application:
         # MUHIM: natijani origin_agent (masalan Direktor)ning o'z xotirasiga
         # ham yozamiz - shunda keyinroq so'ralsa, agent buni "eslaydi".
         db.save_message(origin_agent_key, claimed["origin_chat_id"], "assistant", text)
-        await update.message.reply_text("✅ Javobingiz uzatildi, rahmat!")
+        # MUHIM: tasdiqlash xabari ham ANIQ origin_bot orqali yuborilishi
+        # kerak - avval bu yerda "update.message.reply_text(...)" ishlatilgan
+        # edi, bu esa RAQOBATDA G'OLIB CHIQQAN istalgan botning (masalan
+        # SMM) o'z nomidan xabar yozib yuborishiga sabab bo'lgan - hatto bu
+        # butunlay boshqa bo'limning (masalan Direktor) topikida bo'lsa
+        # ham. Bitta suhbatda faqat BITTA bot ko'rinishi kerak.
+        await _send_with_retry(
+            origin_bot.send_message,
+            chat_id=chat.id,
+            message_thread_id=getattr(update.message, "message_thread_id", None),
+            text="✅ Javobingiz uzatildi, rahmat!",
+        )
         return True
 
     # ---------- Matn xabarlari ----------
