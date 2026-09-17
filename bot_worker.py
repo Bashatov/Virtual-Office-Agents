@@ -255,7 +255,7 @@ def build_worker(agent_key: str, bots: dict) -> Application:
 
             logger.info("[REEL] 2/6: nomzod kadrlarni chiqaryapman...")
             frames = await video_utils.extract_candidate_frames(
-                src_path, src_dir, count=8
+                src_path, src_dir, count=14
             )
             logger.info("[REEL] 2/6 OK: %d ta kadr", len(frames))
 
@@ -264,13 +264,28 @@ def build_worker(agent_key: str, bots: dict) -> Application:
             logger.info("[REEL] 3/6 OK: %d bayt", len(sheet_bytes))
 
             vision_prompt = (
-                "Bu - videodan olingan kadrlar to'plami (chap "
-                "yuqoridan o'ngga, yuqoridan pastga vaqt tartibida). "
+                "Bu - videodan olingan kadrlar to'plami (chap yuqoridan "
+                "o'ngga, yuqoridan pastga tartibda). HAR BIR kadrning "
+                "CHAP-YUQORI burchagida SARIQ rangda ANIQ VAQTI (masalan "
+                "\"1:05\") yozilgan - bu vaqtlarni albatta shu yozuvdan "
+                "O'QI, o'zing taxmin qilma yoki hisoblama.\n"
                 f"Video davomiyligi: {int(duration)} soniya.\n\n"
                 f"Foydalanuvchi ko'rsatmasi: {user_hint or '(berilmagan - o‘zing hal qil)'}\n\n"
                 "Vazifang: shu video mazmuniga ENG MOS qisqa-metrajli "
-                "kontent uchun KREATIV qaror qabul qilish. O'zing "
-                "hal qil:\n"
+                "kontent uchun KREATIV qaror qabul qilish.\n\n"
+                "JUDA MUHIM - sifat talablari:\n"
+                "- Har bir tanlagan lahza uchun, AYNAN O'SHA KADRDA "
+                "KO'RINAYOTGAN narsaga mos sarlavha yoz (umumiy/mavhum "
+                "so'zlar emas - kadrda ANIQ nima bo'lsa, o'shani tasvirla).\n"
+                "- Faqat VIZUAL JIHATDAN ENG QIZIQARLI/FARQLI lahzalarni "
+                "tanla (harakat, kulminatsiya, kutilmagan burilish, "
+                "kontrast) - bir xil/o'xshash ko'rinadigan kadrlarni "
+                "qayta-qayta tanlama.\n"
+                "- Tanlagan lahzalaring VAQT bo'yicha VIDEO BO'YLAB "
+                "TARQALGAN bo'lsin (faqat bitta qismdan emas) - agar "
+                "video boshi, o'rtasi va oxiri farqli mazmunga ega bo'lsa, "
+                "buni aks ettir.\n\n"
+                "Boshqa hal qiladigan narsalar:\n"
                 "1) FORMAT - qaysi biri mos: 9:16 (Reels/TikTok/"
                 "Stories), 1:1 (kvadrat post), 16:9 (YouTube/"
                 "landshaft), 4:5 (Instagram post). Foydalanuvchi "
@@ -280,17 +295,22 @@ def build_worker(agent_key: str, bots: dict) -> Application:
                 "uchun), minimal_caption (toza, zamonaviy, pastki "
                 "kichik yozuv - vlog/lifestyle uchun), cinematic_bar "
                 "(nozik letterbox chiziqlar - tabiat/hujjatli uslub).\n"
-                "3) NECHTA LAHZA kerak (2 dan 6 tagacha) - "
+                "3) NECHTA LAHZA kerak (3 dan 6 tagacha, kamida 3 ta) - "
                 "videoning boyligiga qarab o'zing tanla.\n"
                 "4) HAR BIR LAHZA uchun: necha soniya davom etishi "
                 "(3-12 oralig'ida), video kayfiyatiga mos rang "
-                "(#RRGGBB), va qisqa o'zbekcha sarlavha (2-3 so'z).\n\n"
+                "(#RRGGBB).\n\n"
+                "MUHIM: pastdagi MM:SS qiymati albatta kadr ustidagi "
+                "SARIQ vaqt yozuvidan olingan, ANIQ bir kadrga mos "
+                "bo'lishi shart (masalan agar kadrlar 0:11, 0:23, 0:35 "
+                "da bo'lsa, sen 0:18 kabi oraliq/mavjud bo'lmagan vaqtni "
+                "YOZMA - faqat ko'rgan kadrlaring vaqtidan tanla).\n\n"
                 "Aynan shu formatda javob ber, boshqa izoh yozma:\n"
                 "format: <9:16 yoki 1:1 yoki 16:9 yoki 4:5>\n"
                 "style: <bold_badges yoki minimal_caption yoki cinematic_bar>\n"
                 "title: <umumiy sarlavha, KATTA HARFLAR, qisqa>\n"
                 "MM:SS | davomiylik_soniya | #RRGGBB | Sarlavha\n"
-                "(kerakli sondagi shunday qatorlar, 2-6 ta)"
+                "(kerakli sondagi shunday qatorlar, 3-6 ta)"
             )
             logger.info("[REEL] 4/6: AI vision so'rovi yuborilmoqda...")
             vision_response = await asyncio.wait_for(

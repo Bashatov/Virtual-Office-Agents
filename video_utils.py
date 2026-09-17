@@ -349,12 +349,64 @@ def get_video_info(path: str) -> dict:
 
 # ---------- 3) Nomzod kadrlarni chiqarish (vision uchun) ----------
 
-def _extract_candidate_frames_sync(path: str, dest_dir: str, count: int = 8) -> list:
+def _detect_scene_timestamps(path: str, duration: float, max_count: int = 14) -> list:
+    """
+    ffmpeg'ning sahna-o'zgarish (scene change) aniqlagichidan foydalanib,
+    videoning eng "qiziqarli"/farqli lahzalarini (kesimlar, harakat)
+    topadi - bu tasodifiy teng-oraliqli namunadan ancha mazmunliroq.
+    Turli videolar turlicha "sezuvchanlik" talab qilgani uchun, chegarani
+    moslashuvchan (pasaytirib boruvchi) tanlaymiz.
+    """
+    for threshold in (0.35, 0.25, 0.15, 0.08, 0.04):
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-i", path,
+                 "-vf", f"select='gt(scene,{threshold})',showinfo",
+                 "-vsync", "vfr", "-f", "null", "-",
+                 "-loglevel", "info"],
+                capture_output=True, text=True, timeout=90,
+            )
+        except Exception:
+            return []
+        timestamps = sorted(
+            float(m) for m in re.findall(r"pts_time:([\d.]+)", result.stderr)
+        )
+        if len(timestamps) >= 6:
+            break
+    if len(timestamps) > max_count:
+        step = len(timestamps) / max_count
+        timestamps = [timestamps[int(i * step)] for i in range(max_count)]
+    return timestamps
+
+
+def _extract_candidate_frames_sync(path: str, dest_dir: str, count: int = 14) -> list:
     info = get_video_info(path)
     duration = info.get("duration", 0) or 1
-    timestamps = [duration * (i + 1) / (count + 1) for i in range(count)]
+
+    # 1) Sahna-o'zgarish nuqtalari - eng "qiziqarli" lahzalarni topadi.
+    scene_ts = _detect_scene_timestamps(path, duration, max_count=count)
+
+    # 2) Butun videoni QAMRAB OLISH uchun teng-oraliqli "asosiy nuqtalar"
+    #    ham qo'shamiz - sahna-aniqlash faqat bitta qismda to'planib
+    #    qolgan taqdirda ham, boshqa qismlar e'tibordan chetda qolmasligi
+    #    uchun. (Masalan: sahna-aniqlash faqat videoning boshida ko'p
+    #    topilsa, oxiri butunlay ko'rinmay qolmasligi kerak.)
+    anchor_count = max(6, count // 2)
+    anchor_ts = [duration * (i + 1) / (anchor_count + 1) for i in range(anchor_count)]
+
+    # Ikkalasini birlashtirib, juda yaqin (1 soniyadan kam farq) nuqtalarni
+    # ajratib, vaqt bo'yicha tartiblab, umumiy sonni cheklaymiz.
+    all_ts = sorted(scene_ts + anchor_ts)
+    merged = []
+    for t in all_ts:
+        if not merged or t - merged[-1] > 1.0:
+            merged.append(t)
+    if len(merged) > count:
+        step = len(merged) / count
+        merged = [merged[int(i * step)] for i in range(count)]
+
     frames = []
-    for i, ts in enumerate(timestamps):
+    for i, ts in enumerate(merged):
         out_path = os.path.join(dest_dir, f"cand_{i:02d}.jpg")
         _run([
             "ffmpeg", "-ss", str(ts), "-i", path, "-vframes", "1",
@@ -366,32 +418,58 @@ def _extract_candidate_frames_sync(path: str, dest_dir: str, count: int = 8) -> 
     return frames
 
 
-async def extract_candidate_frames(path: str, dest_dir: str, count: int = 8) -> list:
+async def extract_candidate_frames(path: str, dest_dir: str, count: int = 14) -> list:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(
         None, _extract_candidate_frames_sync, path, dest_dir, count
     )
 
 
+def _format_ts(seconds: float) -> str:
+    m = int(seconds // 60)
+    s = int(seconds % 60)
+    return f"{m}:{s:02d}"
+
+
 def build_contact_sheet(frames: list) -> bytes:
-    """Barcha nomzod kadrlarni bitta katta rasmga (grid) birlashtiradi."""
-    from PIL import Image
+    """
+    Barcha nomzod kadrlarni bitta katta rasmga (grid) birlashtiradi,
+    HAR BIR kadrning ustiga ANIQ VAQTINI yozib qo'yadi. Bu - AI'ning
+    "qaysi kadr qachon" ekanini TAXMIN qilishi shart bo'lmasligi uchun
+    juda muhim: aniq vaqt ko'rinib tursa, tanlagan lahzasi va yozgan
+    izohi orasidagi mos kelmaslik keskin kamayadi.
+    """
+    from PIL import Image, ImageDraw, ImageFont
     import io as _io
 
-    thumbs = [Image.open(_io.BytesIO(f["bytes"])) for f in frames]
-    if not thumbs:
+    thumbs_with_ts = [
+        (Image.open(_io.BytesIO(f["bytes"])), f["timestamp"]) for f in frames
+    ]
+    if not thumbs_with_ts:
         return b""
-    tw, th = 320, 180
+    tw, th = 400, 225
     cols = 4
-    rows = (len(thumbs) + cols - 1) // cols
+    rows = (len(thumbs_with_ts) + cols - 1) // cols
     sheet = Image.new("RGB", (tw * cols, th * rows), "black")
-    for idx, im in enumerate(thumbs):
-        im = im.resize((tw, th))
+
+    try:
+        font = ImageFont.truetype(FONT_FILE, 26) if FONT_FILE else ImageFont.load_default()
+    except Exception:
+        font = ImageFont.load_default()
+
+    for idx, (im, ts) in enumerate(thumbs_with_ts):
+        im = im.resize((tw, th)).convert("RGB")
+        draw = ImageDraw.Draw(im)
+        label = _format_ts(ts)
+        # Vaqt yozuvi ortida qora "yostiqcha" - istalgan fon rangida ham
+        # aniq o'qilishi uchun.
+        draw.rectangle([(4, 4), (4 + 13 * len(label), 34)], fill=(0, 0, 0))
+        draw.text((8, 6), label, fill=(255, 255, 0), font=font)
         x = (idx % cols) * tw
         y = (idx // cols) * th
         sheet.paste(im, (x, y))
     buf = _io.BytesIO()
-    sheet.save(buf, format="JPEG", quality=85)
+    sheet.save(buf, format="JPEG", quality=88)
     return buf.getvalue()
 
 
