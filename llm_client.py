@@ -82,6 +82,13 @@ def transcribe_voice(file_bytes: bytes) -> str:
         resp = client.audio.transcriptions.create(
             model="whisper-1",
             file=audio_file,
+            # MUHIM: tilni ANIQ ko'rsatamiz ("uz" = o'zbek). Buni
+            # bermasak, Whisper tilni o'zi avtomatik aniqlashga harakat
+            # qiladi - va o'zbekcha kabi kamroq tarqalgan tillarni
+            # ba'zan qozoqcha yoki boshqa yaqin turkiy tillar bilan
+            # adashtirib yuboradi. Tilni oldindan aytib qo'yish aniqlikni
+            # sezilarli oshiradi.
+            language="uz",
             timeout=60,
         )
         return (resp.text or "").strip()
